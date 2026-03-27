@@ -976,7 +976,7 @@
       panel.innerHTML = '';
     });
     try { await Promise.allSettled(tasks); } catch(_) {}
-    try { await callAiForPicks(); } catch(_) {}
+    try { await callBackendAnalyze(); } catch(_) {}
     renderSummary();
   }
 
@@ -1054,6 +1054,88 @@
         } else if (p.market === 'IP') {
           const who = p.target === 'home' ? lastHome : lastAway;
            if (who && p.side) pills.push({ text: `IP ${who} ${p.side}`, badge, source: 'ai', reason: p.reason || '' });
+        }
+      }
+      const existing = new Set(base.picks.map(x=>x.text));
+      const merged = base.picks.concat(pills.filter(x=>!existing.has(x.text)));
+      base.picks = merged;
+      picksMap[cardId] = base;
+    }
+  }
+
+  async function callBackendAnalyze() {
+    const dateKey = todayStr();
+    const cacheKey = `aiAnalyze-${dateKey}`;
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const data = JSON.parse(cached);
+        const arr = data?.picks || [];
+        for (const g of arr) {
+          const cardId = gameIdIndex[g.gameId] || '';
+          if (!cardId || !picksMap[cardId]) continue;
+          const base = picksMap[cardId];
+          const pills = [];
+          for (const p of (g.topPicks || [])) {
+            const conf = (p.confidence || '').toLowerCase();
+            const badge = conf === 'strong' ? 'strong' : 'lean';
+            if (p.market === 'ML') {
+              const abr = p.sideTeam || '';
+              if (abr) pills.push({ text: `ML ${abr}`, badge, source: 'ai', reason: p.reason || '' });
+            } else if (p.market === 'TOTAL') {
+              if (p.side && p.line) pills.push({ text: `${p.side} ${p.line}`, badge, source: 'ai', reason: p.reason || '' });
+            } else if (p.market === 'K' && p.target) {
+              const lastAway = aiPayloadMap[cardId]?.away?.pitcherLast || '';
+              const lastHome = aiPayloadMap[cardId]?.home?.pitcherLast || '';
+              const who = p.target === 'home' ? lastHome : lastAway;
+              if (who && p.side) pills.push({ text: `K ${who} ${p.side}`, badge, source: 'ai', reason: p.reason || '' });
+            } else if (p.market === 'IP' && p.target) {
+              const lastAway = aiPayloadMap[cardId]?.away?.pitcherLast || '';
+              const lastHome = aiPayloadMap[cardId]?.home?.pitcherLast || '';
+              const who = p.target === 'home' ? lastHome : lastAway;
+              if (who && p.side) pills.push({ text: `IP ${who} ${p.side}`, badge, source: 'ai', reason: p.reason || '' });
+            }
+          }
+          const existing = new Set(base.picks.map(x=>x.text));
+          const merged = base.picks.concat(pills.filter(x=>!existing.has(x.text)));
+          base.picks = merged;
+          picksMap[cardId] = base;
+        }
+        return;
+      }
+    } catch (_) {}
+    const r = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: dateKey })
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch(_) {}
+    const arr = data?.picks || [];
+    for (const g of arr) {
+      const cardId = gameIdIndex[g.gameId] || '';
+      if (!cardId || !picksMap[cardId]) continue;
+      const base = picksMap[cardId];
+      const pills = [];
+      for (const p of (g.topPicks || [])) {
+        const conf = (p.confidence || '').toLowerCase();
+        const badge = conf === 'strong' ? 'strong' : 'lean';
+        if (p.market === 'ML') {
+          const abr = p.sideTeam || '';
+          if (abr) pills.push({ text: `ML ${abr}`, badge, source: 'ai', reason: p.reason || '' });
+        } else if (p.market === 'TOTAL') {
+          if (p.side && p.line) pills.push({ text: `${p.side} ${p.line}`, badge, source: 'ai', reason: p.reason || '' });
+        } else if (p.market === 'K' && p.target) {
+          const lastAway = aiPayloadMap[cardId]?.away?.pitcherLast || '';
+          const lastHome = aiPayloadMap[cardId]?.home?.pitcherLast || '';
+          const who = p.target === 'home' ? lastHome : lastAway;
+          if (who && p.side) pills.push({ text: `K ${who} ${p.side}`, badge, source: 'ai', reason: p.reason || '' });
+        } else if (p.market === 'IP' && p.target) {
+          const lastAway = aiPayloadMap[cardId]?.away?.pitcherLast || '';
+          const lastHome = aiPayloadMap[cardId]?.home?.pitcherLast || '';
+          const who = p.target === 'home' ? lastHome : lastAway;
+          if (who && p.side) pills.push({ text: `IP ${who} ${p.side}`, badge, source: 'ai', reason: p.reason || '' });
         }
       }
       const existing = new Set(base.picks.map(x=>x.text));
