@@ -1,0 +1,2148 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MLB Hoy – ESPN API</title>
+  <meta name="description" content="Partidos de MLB de hoy con pitchers abridores, momios y estadísticas comparativas de los últimos 10 juegos." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('theme');
+        var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    :root {
+      --bg: #0d1117;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --strip-bg: #0d1117;
+      --dot-bg: #21262d;
+      --score: #ffffff;
+      --inner-bg: #0d1117;
+      --pre-bg: #0d1117;
+      --pre-border: #30363d;
+      --pill-bg: #21262d;
+      --track-bg: #21262d;
+      --legend-border: #30363d;
+      --legend-text: #8b949e;
+      --skeleton-1: #21262d;
+      --skeleton-2: #30363d;
+    }
+    [data-theme="light"] {
+      --bg: #f8fafc;
+      --text: #0f172a;
+      --muted: #64748b;
+      --card-bg: #ffffff;
+      --card-border: #e2e8f0;
+      --strip-bg: #f1f5f9;
+      --dot-bg: #e2e8f0;
+      --score: #0f172a;
+      --inner-bg: #ffffff;
+      --pre-bg: #ffffff;
+      --pre-border: #e2e8f0;
+      --pill-bg: #f1f5f9;
+      --track-bg: #e5e7eb;
+      --legend-border: #e2e8f0;
+      --legend-text: #64748b;
+      --skeleton-1: #e5e7eb;
+      --skeleton-2: #cbd5e1;
+    }
+
+    body {
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 2.5rem 1rem;
+    }
+
+    /* ── Header ── */
+    header { text-align: center; margin-bottom: 2.5rem; position: relative; }
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #e63946 0%, #f4a261 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -0.5px;
+    }
+    header p { color: var(--muted); margin-top: 0.4rem; font-size: 0.92rem; }
+    .theme-toggle {
+      position: absolute;
+      top: 0.5rem;
+      right: 1rem;
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* ── Loading / Error ── */
+    #status { text-align: center; padding: 1.5rem; color: var(--muted); font-size: 0.9rem; }
+    .spinner {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid var(--card-border);
+      border-top-color: #e63946;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Container ── */
+    #games-container {
+      max-width: 960px;
+      margin: 0 auto;
+      display: grid;
+      gap: 1.5rem;
+    }
+
+    /* ── Game Card ── */
+    .game-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .game-card:hover {
+      border-color: #58a6ff44;
+      box-shadow: 0 4px 24px #0006;
+    }
+
+    /* top strip */
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.55rem 1.25rem;
+      background: var(--strip-bg);
+      border-bottom: 1px solid var(--card-border);
+      font-size: 0.75rem;
+      color: var(--muted);
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .card-top .tv { color: #e63946; font-weight: 600; }
+    .card-top .weather-info { display:flex; align-items:center; gap:4px; }
+
+    /* scoreline */
+    .card-body {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 1rem;
+      padding: 1.5rem 1.5rem 1rem;
+    }
+
+    .team { display: flex; align-items: center; gap: 0.85rem; }
+    .team.away { flex-direction: row; }
+    .team.home { flex-direction: row-reverse; text-align: right; }
+
+    .team-logo {
+      width: 56px; height: 56px;
+      object-fit: contain; flex-shrink: 0;
+      filter: drop-shadow(0 2px 6px #0006);
+    }
+    .team-name { font-weight: 700; font-size: 1.05rem; }
+    .team-meta { display: flex; flex-direction: column; gap: 3px; }
+    .team.home .team-meta { align-items: flex-end; }
+    .team-record { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    .team-side {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: fit-content;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border: 1px solid var(--card-border);
+      background: var(--pill-bg);
+      color: var(--muted);
+    }
+
+    .score-box { text-align: center; }
+    .score {
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: 6px;
+      color: var(--score);
+    }
+    .status-badge {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      border: 1px solid;
+    }
+    .status-badge.pre      { background:#0c1e3a; color:#58a6ff; border-color:#58a6ff55; }
+    .status-badge.in       { background:#0d2a13; color:#3fb950; border-color:#3fb950; animation: pulse 1.5s ease-in-out infinite; }
+    .status-badge.post     { background:#1a1a2e; color:var(--muted); border-color:var(--card-border); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+    /* linescore dots */
+    .linescore {
+      display: flex;
+      gap: 3px;
+      margin-top: 8px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .inning-dot {
+      width: 20px; height: 20px;
+      border-radius: 4px;
+      background: var(--dot-bg);
+      font-size: 0.65rem;
+      font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--muted);
+    }
+    .inning-dot.scored { background: #1f3d1a; color: #3fb950; }
+
+    /* ── Pitchers section ── */
+    .pitchers-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      padding: 1rem 1.5rem 0.75rem;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .pitcher-card {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: var(--inner-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 0.75rem;
+    }
+
+    .pitcher-card img {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--dot-bg);
+      flex-shrink: 0;
+      border: 2px solid var(--card-border);
+    }
+
+    .pitcher-info { min-width: 0; }
+    .pitcher-label {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .pitcher-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .pitcher-jersey {
+      font-size: 0.72rem;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+
+    /* ── Compare button ── */
+    .compare-btn-row {
+      padding: 0.5rem 1.5rem 0.75rem;
+      display: flex;
+      justify-content: center;
+    }
+    .compare-btn {
+      background: linear-gradient(135deg,#e63946,#f4a261);
+      color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 6px 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: opacity 0.2s, transform 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .compare-btn:hover { opacity: 0.85; transform: scale(1.03); }
+    .compare-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    /* ── Stats panel ── */
+    .stats-panel {
+      border-top: 1px solid var(--card-border);
+      padding: 1.25rem 1.5rem;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+    .stats-panel.open { display: block; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:none} }
+
+    .stats-panel-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      font-weight: 700;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .advice {
+      border: 1px solid var(--card-border);
+      background: var(--inner-bg);
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+      margin-bottom: 1rem;
+    }
+    .advice-title {
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+      text-align: center;
+    }
+    .advice-row {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: center;
+    }
+    .advice-pill {
+      border: 1px solid var(--card-border);
+      background: var(--pill-bg);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 0.78rem;
+      font-weight: 700;
+    }
+    .advice-badge {
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      color: #111;
+      background: #fde68a;
+      border: 1px solid rgba(0,0,0,0.06);
+    }
+    .advice-badge.strong { background: #86efac; }
+    .advice-badge.lean   { background: #bfdbfe; }
+    .advice-badge.noplay { background: #e5e7eb; }
+    .advice-expl {
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-top: 0.6rem;
+      line-height: 1.35;
+      text-align: center;
+    }
+    .advice-def {
+      color: var(--muted);
+      font-size: 0.65rem;
+      margin-top: 0.5rem;
+      text-align: center;
+      opacity: 0.85;
+    }
+
+    .summary-section {
+      max-width: 960px;
+      margin: 0 auto 1rem;
+      border: 1px solid var(--card-border);
+      background: var(--inner-bg);
+      border-radius: 12px;
+      padding: 0.9rem 1rem;
+    }
+    .summary-section.collapsed { position: sticky; top: 8px; z-index: 10; }
+    .summary-title {
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+      text-align: center;
+      cursor: pointer;
+    }
+    .picks-list { display: flex; flex-direction: column; gap: 8px; }
+    .pick-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px 10px;
+      justify-content: space-between;
+      border: 1px dashed var(--card-border);
+      padding: 8px 10px;
+      border-radius: 8px;
+    }
+    .pick-title { font-weight: 800; font-size: 0.85rem; color: var(--text); display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .pick-time { font-size: 0.78rem; color: var(--muted); margin-left: 6px; }
+    .pick-logo { width: 22px; height: 22px; object-fit: contain; vertical-align: middle; }
+    .pick-side {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2px 7px;
+      border-radius: 999px;
+      border: 1px solid var(--card-border);
+      background: var(--pill-bg);
+      color: var(--muted);
+      font-size: 0.65rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .pick-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+    .pick-tag {
+      border: 1px solid var(--card-border);
+      background: var(--pill-bg);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .pick-tag .badge { border-radius: 4px; padding: 1px 4px; font-size: 0.7rem; font-weight: 800; color: #111; }
+    .pick-tag .badge.strong { background: #86efac; }
+    .pick-tag .badge.lean { background: #bfdbfe; }
+    .pick-tag .star { color: #facc15; }
+    .summary-section.collapsed .picks-list { display: none; }
+    .ai-badge {
+      background: #fde68a;
+      color: #111;
+      border: 1px solid rgba(0,0,0,0.06);
+      border-radius: 3px;
+      padding: 1px 4px;
+      font-size: 0.65rem;
+      font-weight: 800;
+    }
+    .pick-reason {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-left: 6px;
+    }
+    .advice-ai {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-top: 0.5rem;
+      line-height: 1.35;
+      text-align: center;
+    }
+
+    /* side-by-side pitchers comparison */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+    }
+
+    .pitcher-stats-col { }
+    .pitcher-stats-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .pitcher-stats-name .team-tag {
+      font-size: 0.65rem;
+      background: var(--dot-bg);
+      border-radius: 4px;
+      padding: 1px 6px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    /* Averages row */
+    .avg-row {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .avg-pill {
+      background: var(--inner-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 0.4rem 0.75rem;
+      text-align: center;
+      min-width: 72px;
+    }
+    .avg-pill .avg-val {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .avg-pill .avg-lbl {
+      font-size: 0.6rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-top: 1px;
+    }
+    .avg-pill.highlight .avg-val { color: #f4a261; }
+
+    /* Game rows */
+    .game-rows { display: flex; flex-direction: column; gap: 5px; }
+    .game-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.72rem;
+    }
+    .game-row .game-date {
+      width: 60px;
+      color: var(--muted);
+      flex-shrink: 0;
+      font-size: 0.68rem;
+    }
+    .game-row .game-opp {
+      width: 36px;
+      color: var(--muted);
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .bar-wrap {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .bar-track {
+      background: var(--track-bg);
+      border-radius: 999px;
+      height: 6px;
+      overflow: hidden;
+      position: relative;
+    }
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.6s cubic-bezier(.4,0,.2,1);
+    }
+    .bar-fill.ip-bar { background: linear-gradient(90deg,#58a6ff,#1f6feb); }
+    .bar-fill.k-bar  { background: linear-gradient(90deg,#f4a261,#e63946); }
+    .bar-label {
+      font-size: 0.65rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .bar-values {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+      width: 72px;
+      justify-content: flex-end;
+    }
+    .bar-values .v-ip { color: #58a6ff; font-weight: 700; font-size: 0.72rem; }
+    .bar-values .v-k  { color: #f4a261; font-weight: 700; font-size: 0.72rem; }
+    .res-badge {
+      font-size: 0.6rem;
+      font-weight: 800;
+      border-radius: 3px;
+      padding: 0px 4px;
+      line-height: 14px;
+    }
+    .res-w { background: #dcfce7; color: #166534; }
+    .res-l { background: #fee2e2; color: #991b1b; }
+    .po-badge {
+      background: #f4a261;
+      color: #111 !important;
+      font-size: 0.53rem;
+      padding: 1px 3px;
+      border-radius: 2px;
+      font-weight: 800;
+      margin-left: 2px;
+      vertical-align: middle;
+      border: 1px solid rgba(0,0,0,0.1);
+    }
+    .symbol-at { color: #f4a261; font-weight: bold; margin-right: 2px; }
+    .symbol-vs { color: #388bfd; font-weight: bold; margin-right: 2px; }
+    .stats-legend {
+      display: flex;
+      gap: 15px;
+      font-size: 0.65rem;
+      margin-top: 15px;
+      padding-top: 10px;
+      border-top: 1px solid var(--legend-border);
+      color: var(--legend-text);
+      justify-content: center;
+    }
+    .game-line-score {
+      font-size: 0.65rem;
+      color: var(--muted);
+      margin-top: 4px;
+      letter-spacing: 0.2px;
+    }
+
+    /* loading skeleton */
+    .skeleton-rows { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .skeleton-row {
+      height: 28px;
+      background: linear-gradient(90deg,var(--skeleton-1) 25%,var(--skeleton-2) 50%,var(--skeleton-1) 75%);
+      background-size: 200% 100%;
+      border-radius: 6px;
+      animation: shimmer 1.3s infinite;
+    }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+
+    /* legend */
+    .stats-legend {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 0.75rem;
+      font-size: 0.68rem;
+      color: var(--muted);
+    }
+    .legend-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+    .legend-dot.ip { background: #58a6ff; }
+    .legend-dot.k  { background: #f4a261; }
+
+    /* error inline */
+    .stats-error { color: #f85149; font-size: 0.8rem; text-align: center; padding: 1rem; }
+
+    /* ── Odds ── */
+    .odds-section {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.75rem 1.5rem;
+      border-top: 1px solid var(--card-border);
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .odds-label { font-size: 0.75rem; color: var(--muted); font-weight: 500; }
+    .odds-pill {
+      background: var(--pill-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .odds-pill span { color: var(--muted); margin-right: 4px; }
+
+    /* ── Venue / meta ── */
+    .card-footer {
+      padding: 0.6rem 1.5rem;
+      border-top: 1px solid var(--card-border);
+      font-size: 0.72rem;
+      color: var(--muted);
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    /* ── No games ── */
+    .no-games {
+      text-align: center; padding: 5rem 2rem; color: var(--muted);
+    }
+    .no-games .emoji { font-size: 3rem; display: block; margin-bottom: 1rem; }
+
+    /* ── Raw JSON toggle ── */
+    #raw-box { max-width: 960px; margin: 2rem auto 0; }
+    details summary {
+      cursor: pointer; color: #58a6ff; font-size: 0.83rem;
+      padding: 0.5rem 0; user-select: none;
+    }
+    details pre {
+      background: var(--pre-bg); border: 1px solid var(--pre-border);
+      border-radius: 8px; padding: 1rem;
+      font-size: 0.7rem; overflow: auto; max-height: 280px;
+      color: var(--muted); margin-top: 0.5rem;
+    }
+
+    @media (max-width: 600px) {
+      .card-body { grid-template-columns: 1fr; text-align: center; }
+      .team.home { flex-direction: row; text-align: left; }
+      .pitchers-section { grid-template-columns: 1fr; }
+      .compare-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚾ MLB – Partidos de Hoy</h1>
+  <p id="date-label">Cargando…</p>
+  <button id="theme-toggle" class="theme-toggle">🌙 Modo oscuro</button>
+</header>
+
+<div id="status"><span class="spinner"></span> Consultando ESPN API…</div>
+<section id="summary-section" class="summary-section">
+  <div class="summary-title">🎯 Resumen de apuestas por juego</div>
+  <div class="pick-tags" style="justify-content:center; margin-bottom:8px; display:flex; gap:8px;">
+    <button id="best-open" class="pick-tag"><span class="star">⭐</span> Mejores apuestas</button>
+  </div>
+  <div id="picks-list" class="picks-list"></div>
+</section>
+<div id="games-container"></div>
+<div id="raw-box"></div>
+
+<script>
+  // ── Helpers ──────────────────────────────────────────────
+  function todayStr() {
+    const d = new Date();
+    return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  const CURRENT_YEAR = new Date().getFullYear();
+  const ANALYSIS_SEASONS = [2025, CURRENT_YEAR].filter((year, idx, arr) => arr.indexOf(year) === idx);
+
+  function safeNum(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function mergeWeightedMetrics(rows, keys) {
+    const totalGames = rows.reduce((sum, row) => sum + safeNum(row?.games), 0);
+    const merged = { games: totalGames };
+    for (const key of keys) {
+      const weighted = rows.reduce((sum, row) => sum + (safeNum(row?.[key]) * safeNum(row?.games)), 0);
+      merged[key] = totalGames ? (weighted / totalGames) : 0;
+    }
+    return merged;
+  }
+
+  const PARK_FACTORS = {
+    'Coors Field': 1.15,
+    'Fenway Park': 1.08,
+    'Great American Ball Park': 1.10,
+    'Wrigley Field': 1.04,
+    'Yankee Stadium': 1.05,
+    'Globe Life Field': 1.04,
+    'Dodger Stadium': 1.02,
+    'Chase Field': 1.05,
+    'Petco Park': 0.97,
+    'Oracle Park': 0.96,
+    'T-Mobile Park': 0.95
+  };
+  function getParkFactor(venueName) {
+    const keys = Object.keys(PARK_FACTORS);
+    for (const k of keys) {
+      if ((venueName || '').includes(k)) return PARK_FACTORS[k];
+    }
+    return 1.0;
+  }
+
+  async function fetchTeamSeasonRPG(teamId, season) {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/${teamId}/schedule?season=${season}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('schedule');
+    const data = await res.json();
+    const games = (data.events || []).filter(ev => ev.competitions?.[0]?.status?.type?.state === 'post');
+    const rows = games.map(ev => {
+      const comp = ev.competitions?.[0];
+      const team = comp?.competitors?.find(c => String(c.team?.id) === String(teamId));
+      const runs = parseFloat(team?.score?.value || 0);
+      const homeAway = team?.homeAway || '';
+      return { runs, homeAway };
+    });
+    const n = rows.length || 1;
+    const sumR = rows.reduce((a,r)=>a+r.runs,0);
+    const rHome = rows.filter(r=>r.homeAway==='home');
+    const rAway = rows.filter(r=>r.homeAway==='away');
+    const avg = (arr) => arr.length ? arr.reduce((a,x)=>a+x.runs,0)/arr.length : 0;
+    return { rpg: sumR/n, rpgHome: avg(rHome), rpgAway: avg(rAway), games: n };
+  }
+
+  function parseGamelogAll(data) {
+    const eventsMap = data.events ?? {};
+    const seasonTypes = data.seasonTypes ?? [];
+    const labels = data.labels ?? [];
+    let ipIdx = labels.findIndex(l => /^ip$/i.test(l));
+    let kIdx  = labels.findIndex(l => /^k$/i.test(l) || /^so$/i.test(l));
+    let hIdx  = labels.findIndex(l => /^h$/i.test(l));
+    let rIdx  = labels.findIndex(l => /^r$/i.test(l));
+    let bbIdx = labels.findIndex(l => /^bb$/i.test(l));
+    if (ipIdx < 0) ipIdx = 0;
+    if (kIdx  < 0) kIdx  = 6;
+    if (hIdx  < 0) hIdx  = 1;
+    if (rIdx  < 0) rIdx  = 2;
+    if (bbIdx < 0) bbIdx = 5;
+    const entries = [];
+    for (const st of (seasonTypes || [])) {
+      const isPost = String(st.id) === '3' || /post|series/i.test(st.name ?? '');
+      for (const cat of (st.categories || [])) {
+        for (const ev of (cat.events || [])) {
+          if (!ev.eventId) continue;
+          entries.push({ eventId: String(ev.eventId), stats: ev.stats || [], isPost, eventNote: ev.eventNote });
+        }
+      }
+    }
+    const games = entries.map(e => {
+      const meta    = eventsMap[e.eventId] ?? {};
+      const rawIP   = e.stats[ipIdx];
+      const rawK    = e.stats[kIdx];
+      const rawH    = e.stats[hIdx];
+      const rawR    = e.stats[rIdx];
+      const rawBB   = e.stats[bbIdx];
+      const ipDec   = ipToDecimal(rawIP);
+      const k       = parseInt(rawK  ?? '0', 10) || 0;
+      const h       = parseInt(rawH  ?? '0', 10) || 0;
+      const r       = parseInt(rawR  ?? '0', 10) || 0;
+      const bb      = parseInt(rawBB ?? '0', 10) || 0;
+      let dateStr = '';
+      if (meta.gameDate) {
+        try { dateStr = new Date(meta.gameDate).toLocaleDateString('es-MX',{month:'short',day:'numeric'}); }
+        catch(_) { dateStr = meta.gameDate?.slice(0,10) ?? ''; }
+      }
+      let symbol = meta.atVs || (meta.homeAway === 'away' ? '@' : 'vs');
+      if (symbol === 'en') symbol = '@';
+      const oppAbbr = meta.opponent?.abbreviation ?? '';
+      const isPostGame = e.isPost || /ALDS|NLDS|ALCS|NLCS|WS|WC/i.test(e.eventNote ?? '');
+      return { eventId: e.eventId, date: dateStr, isoDate: meta.gameDate ?? '', opp: `${symbol} ${oppAbbr}`, ip: rawIP ?? '0', k, h, r, bb, ipDec, result: meta.gameResult ?? '', isPost: isPostGame };
+    }).filter(g => g.ipDec > 0 || g.k > 0);
+    games.sort((a,b) => new Date(b.isoDate) - new Date(a.isoDate));
+    return games;
+  }
+
+  async function fetchGamelogSeason(athleteId, season) {
+    const url = `https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${athleteId}/gamelog?season=${season}&category=pitching`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('season');
+    const data = await res.json();
+    return data;
+  }
+
+  async function fetchPitcherMultiSeasonGames(athleteId, seasons) {
+    const results = await Promise.allSettled(seasons.map(season => fetchGamelogSeason(athleteId, season)));
+    const allGames = results
+      .filter(result => result.status === 'fulfilled')
+      .flatMap(result => parseGamelogAll(result.value));
+    const deduped = [];
+    const seen = new Set();
+    for (const game of allGames.sort((a,b) => new Date(b.isoDate) - new Date(a.isoDate))) {
+      const key = game.eventId || `${game.isoDate}-${game.opp}-${game.ip}-${game.k}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(game);
+    }
+    return deduped.slice(0, 60);
+  }
+
+  const picksMap = {};
+  const aiPayloadMap = {};
+  const gameIdIndex = {};
+  function renderSummary() {
+    const list = document.getElementById('picks-list');
+    if (!list) return;
+    let entries = Object.entries(picksMap);
+    if (!entries.length) {
+      list.innerHTML = '';
+      return;
+    }
+    entries = entries.sort((a,b) => {
+      const sa = a[1].picks.filter(p=>p.badge==='strong').length;
+      const sb = b[1].picks.filter(p=>p.badge==='strong').length;
+      const ma = a[1].picks.filter(p=>p.badge!=='strong').length;
+      const mb = b[1].picks.filter(p=>p.badge!=='strong').length;
+      const ea = Number(a[1].edge||0);
+      const eb = Number(b[1].edge||0);
+      const scoreA = sa*100 + ma*10 + ea;
+      const scoreB = sb*100 + mb*10 + eb;
+      return scoreB - scoreA;
+    });
+    list.innerHTML = entries.map(([cid, it]) => {
+      const base = STRONG_ONLY ? it.picks.filter(p=>p.badge==='strong') : it.picks;
+      if (!base.length && STRONG_ONLY) return '';
+      const tStr = it.evtIso ? fmtTime(it.evtIso) : '';
+      const tags = base.map(p => {
+        const star = p.badge === 'strong' ? '<span class="star">⭐</span>' : '';
+        const ai   = p.source === 'ai' ? '<span class="ai-badge">IA</span>' : '';
+        const r    = (p.source === 'ai' && p.badge === 'strong' && p.reason) ? `<span class="pick-reason">IA: ${esc(p.reason).slice(0,140)}</span>` : '';
+        return `<span class="pick-tag">${p.text} <span class="badge ${p.badge}">${p.badge==='strong'?'Fuerte':'Medio'}</span> ${ai} ${star} ${r}</span>`;
+      }).join(' ');
+      const logos = `
+        <span class="pick-side">Visitante</span>
+        ${it.awayLogo ? `<img class="pick-logo" src="${it.awayLogo}" alt="${it.awayAbr}" onerror="this.style.display='none'">` : ''}
+        ${it.awayAbr}
+        <span>@</span>
+        <span class="pick-side">Local</span>
+        ${it.homeLogo ? `<img class="pick-logo" src="${it.homeLogo}" alt="${it.homeAbr}" onerror="this.style.display='none'">` : ''}
+        ${it.homeAbr}
+        ${tStr ? `<span class="pick-time">· ${tStr}</span>` : ''}`;
+      return `<div class="pick-row" data-card="${cid}"><div class="pick-title">${logos}</div><div class="pick-tags">${tags}</div></div>`;
+    }).join('');
+  }
+  function updateSummary(cardId, awayAbr, homeAbr, picks, edge) {
+    const title = `${awayAbr} @ ${homeAbr}`;
+    const btn = document.getElementById('btn-' + cardId);
+    const awayLogo = btn?.dataset?.awayLogo || '';
+    const homeLogo = btn?.dataset?.homeLogo || '';
+    const evtIso   = btn?.dataset?.evtTime || '';
+    const gameId = btn?.dataset?.eventId || '';
+    picksMap[cardId] = { title, picks, awayAbr, homeAbr, awayLogo, homeLogo, evtIso, gameId, edge: Number(edge || 0) };
+    if (gameId) gameIdIndex[gameId] = cardId;
+    renderSummary();
+  }
+
+  (function initSummarySection(){
+    const section = document.getElementById('summary-section');
+    if (!section) return;
+    const title = section.querySelector('.summary-title');
+    const list = document.getElementById('picks-list');
+    if (title) {
+      title.addEventListener('click', function(){
+        section.classList.toggle('collapsed');
+      });
+    }
+    const bestBtn = document.getElementById('best-open');
+    if (bestBtn) {
+      bestBtn.addEventListener('click', function(){
+        STRONG_ONLY = !STRONG_ONLY;
+        bestBtn.innerHTML = STRONG_ONLY ? '<span class="star">⭐</span> Mejores apuestas' : 'Todas las apuestas';
+        renderSummary();
+      });
+    }
+    section.addEventListener('click', function(e){
+      const row = e.target.closest('.pick-row');
+      if (row) {
+        const cid = row.getAttribute('data-card');
+        if (!cid) return;
+        const card = document.getElementById(cid);
+        if (card) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          const btn = document.getElementById('btn-' + cid);
+          if (btn) {
+            if (typeof btn.click === 'function') btn.click();
+          }
+        }
+      }
+    });
+  })();
+
+  async function computeAllPicksSilently() {
+    const container = document.getElementById('games-container');
+    if (!container) return;
+    const btns = Array.from(container.querySelectorAll('.compare-btn'));
+    const tasks = btns.map(async btn => {
+      const cardId = btn.dataset.card;
+      const panel = document.getElementById(`panel-${cardId}`);
+      if (!panel) return;
+      const away = { team: { abbreviation: btn.dataset.awayAbr } };
+      const home = { team: { abbreviation: btn.dataset.homeAbr } };
+      const awayPitcher = JSON.parse(btn.dataset.awayPitcher || 'null');
+      const homePitcher = JSON.parse(btn.dataset.homePitcher || 'null');
+      try {
+        await loadComparison(panel, away, home, awayPitcher, homePitcher);
+      } catch(_) {}
+      panel.classList.remove('open');
+      panel.innerHTML = '';
+    });
+    try { await Promise.allSettled(tasks); } catch(_) {}
+    try { await callAiForPicks(); } catch(_) {}
+    renderSummary();
+  }
+
+  async function callAiForPicks() {
+    const games = Object.values(aiPayloadMap);
+    if (!games.length) return;
+    const dateKey = todayStr();
+    const cacheKey = `aiPicks-${dateKey}`;
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const data = JSON.parse(cached);
+        const arr = data?.picks || [];
+        for (const g of arr) {
+          const cardId = gameIdIndex[g.gameId] || '';
+          if (!cardId || !picksMap[cardId]) continue;
+          const base = picksMap[cardId];
+          const meta = aiPayloadMap[cardId] || {};
+          const lastAway = meta?.away?.pitcherLast || '';
+          const lastHome = meta?.home?.pitcherLast || '';
+          const pills = [];
+          for (const p of (g.topPicks || [])) {
+            const conf = (p.confidence || '').toLowerCase();
+            const badge = conf === 'strong' ? 'strong' : 'lean';
+            if (p.market === 'ML') {
+              const abr = p.sideTeam || p.sideAbr || (p.side === 'away' ? base.awayAbr : p.side === 'home' ? base.homeAbr : '');
+              if (abr) pills.push({ text: `ML ${abr}`, badge, source: 'ai', reason: p.reason || '' });
+            } else if (p.market === 'TOTAL') {
+              if (p.side && p.line) pills.push({ text: `${p.side} ${p.line}`, badge, source: 'ai', reason: p.reason || '' });
+            } else if (p.market === 'K') {
+              const who = p.target === 'home' ? lastHome : lastAway;
+              if (who && p.side) pills.push({ text: `K ${who} ${p.side}`, badge, source: 'ai', reason: p.reason || '' });
+            } else if (p.market === 'IP') {
+              const who = p.target === 'home' ? lastHome : lastAway;
+              if (who && p.side) pills.push({ text: `IP ${who} ${p.side}`, badge, source: 'ai', reason: p.reason || '' });
+            }
+          }
+          const existing = new Set(base.picks.map(x=>x.text));
+          const merged = base.picks.concat(pills.filter(x=>!existing.has(x.text)));
+          base.picks = merged;
+          picksMap[cardId] = base;
+        }
+        return;
+      }
+    } catch (_) {}
+    const payload = { date: dateKey, games };
+    const r = await fetch('/api/ai-picks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!r.ok) return;
+    const data = await r.json();
+    try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch(_) {}
+    const arr = data?.picks || [];
+    for (const g of arr) {
+      const cardId = gameIdIndex[g.gameId] || '';
+      if (!cardId || !picksMap[cardId]) continue;
+      const base = picksMap[cardId];
+      const meta = aiPayloadMap[cardId] || {};
+      const lastAway = meta?.away?.pitcherLast || '';
+      const lastHome = meta?.home?.pitcherLast || '';
+      const pills = [];
+      for (const p of (g.topPicks || [])) {
+        const conf = (p.confidence || '').toLowerCase();
+        const badge = conf === 'strong' ? 'strong' : 'lean';
+        if (p.market === 'ML') {
+          const abr = p.sideTeam || p.sideAbr || (p.side === 'away' ? base.awayAbr : p.side === 'home' ? base.homeAbr : '');
+          if (abr) pills.push({ text: `ML ${abr}`, badge, source: 'ai', reason: p.reason || '' });
+        } else if (p.market === 'TOTAL') {
+          if (p.side && p.line) pills.push({ text: `${p.side} ${p.line}`, badge, source: 'ai', reason: p.reason || '' });
+        } else if (p.market === 'K') {
+          const who = p.target === 'home' ? lastHome : lastAway;
+          if (who && p.side) pills.push({ text: `K ${who} ${p.side}`, badge, source: 'ai', reason: p.reason || '' });
+        } else if (p.market === 'IP') {
+          const who = p.target === 'home' ? lastHome : lastAway;
+           if (who && p.side) pills.push({ text: `IP ${who} ${p.side}`, badge, source: 'ai', reason: p.reason || '' });
+        }
+      }
+      const existing = new Set(base.picks.map(x=>x.text));
+      const merged = base.picks.concat(pills.filter(x=>!existing.has(x.text)));
+      base.picks = merged;
+      picksMap[cardId] = base;
+    }
+  }
+
+  function fmtTime(iso) {
+    try { return new Date(iso).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit',hour12:true}); }
+    catch { return ''; }
+  }
+
+  function getRecord(competitor) {
+    return (competitor.records?.find(r=>r.type==='total'||r.name==='overall')?.summary) ?? '';
+  }
+
+  function statusInfo(event) {
+    const state  = event.status?.type?.state  ?? '';
+    const detail = event.status?.type?.detail ?? '';
+    if (state === 'in')   return { label: detail || 'EN VIVO', cls: 'in' };
+    if (state === 'post') return { label: 'Final',             cls: 'post' };
+    return { label: fmtTime(event.date), cls: 'pre' };
+  }
+
+  // ── Pitcher card HTML ────────────────────────────────────
+  function pitcherCard(probable, label) {
+    if (!probable) return `
+      <div class="pitcher-card">
+        <img src="https://a.espncdn.com/i/headshots/nophoto.png" alt="?" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2248%22 height=%2248%22/>'" />
+        <div class="pitcher-info"><div class="pitcher-label">${label}</div><div class="pitcher-name">Por confirmar</div></div>
+      </div>`;
+
+    const a = probable.athlete;
+    return `
+      <div class="pitcher-card">
+        <img src="${a.headshot}" alt="${a.fullName}"
+             onerror="this.src='https://a.espncdn.com/i/headshots/mlb/players/full/default.png'" />
+        <div class="pitcher-info">
+          <div class="pitcher-label">${label}</div>
+          <div class="pitcher-name">${a.fullName}</div>
+          <div class="pitcher-jersey">#${a.jersey ?? '–'} · ${a.position ?? 'SP'}</div>
+        </div>
+      </div>`;
+  }
+
+  // ── Linescore ────────────────────────────────────────────
+  function linescoreDots(linescores) {
+    if (!linescores?.length) return '';
+    return `<div class="linescore">
+      ${linescores.map(l=>`<div class="inning-dot ${l.value>0?'scored':''}">${l.value>0?l.value:''}</div>`).join('')}
+    </div>`;
+  }
+
+  // ── Team offense last-10 (R/G, K/G) ──────────────────────
+  async function fetchTeamSchedule(teamId, year) {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/${teamId}/schedule?season=${year}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('schedule');
+    return res.json();
+  }
+
+  const gameSummaryCache = new Map();
+
+  async function fetchGameSummary(eventId) {
+    if (gameSummaryCache.has(eventId)) return gameSummaryCache.get(eventId);
+    const request = (async () => {
+      const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${eventId}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('summary');
+      return res.json();
+    })();
+    gameSummaryCache.set(eventId, request);
+    try {
+      return await request;
+    } catch (error) {
+      gameSummaryCache.delete(eventId);
+      throw error;
+    }
+  }
+
+  async function fetchTeamSeasonBatting(teamId, season) {
+    const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/${teamId}/statistics?season=${season}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('statistics');
+    const data = await res.json();
+    const batting = (data.splits?.categories || []).find(cat => cat.name === 'batting');
+    const stats = batting?.stats || [];
+    const avgStat = stats.find(stat => stat.name === 'avg');
+    const opsStat = stats.find(stat => stat.name === 'OPS');
+    if (!avgStat && !opsStat) {
+      return { avg: 0, avgDisplay: 'N/D', ops: 0, opsDisplay: 'N/D' };
+    }
+    return {
+      avg: safeNum(avgStat?.value),
+      avgDisplay: avgStat?.displayValue || 'N/D',
+      ops: safeNum(opsStat?.value),
+      opsDisplay: opsStat?.displayValue || 'N/D'
+    };
+  }
+
+  async function fetchTeamMergedSeasonOffense(teamId, seasons) {
+    const results = await Promise.allSettled(seasons.map(season => fetchTeamSeasonRPG(teamId, season)));
+    const rows = results.filter(result => result.status === 'fulfilled').map(result => result.value);
+    return mergeWeightedMetrics(rows, ['rpg', 'rpgHome', 'rpgAway']);
+  }
+
+  function getSummaryPlayerBlocks(sum) {
+    if (Array.isArray(sum?.players) && sum.players.length) return sum.players;
+    if (Array.isArray(sum?.boxscore?.players) && sum.boxscore.players.length) return sum.boxscore.players;
+    return [];
+  }
+
+  function findBlockIndex(block, matcher) {
+    const collections = [block?.labels, block?.keys, block?.names];
+    for (const items of collections) {
+      const idx = (items || []).findIndex(value => matcher(String(value || '')));
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  }
+
+  function extractBatterStatLine(block, athlete) {
+    const stats = athlete?.stats || [];
+    const hitIdx = findBlockIndex(block, value => /^h$/i.test(value) || /^hits$/i.test(value));
+    const abIdx = findBlockIndex(block, value => /^ab$/i.test(value) || /^atbats$/i.test(value));
+    let hitsValue = hitIdx >= 0 ? parseInt(stats[hitIdx] ?? '0', 10) || 0 : 0;
+    let atBatsValue = abIdx >= 0 ? parseInt(stats[abIdx] ?? '0', 10) || 0 : 0;
+    if (hitIdx < 0 || abIdx < 0) {
+      const comboIdx = findBlockIndex(block, value => /^h-ab$/i.test(value) || /^hits-atbats$/i.test(value));
+      const combo = comboIdx >= 0 ? String(stats[comboIdx] ?? '') : '';
+      const [comboHits, comboAtBats] = combo.split('-').map(part => parseInt(part, 10) || 0);
+      if (hitIdx < 0) hitsValue = comboHits;
+      if (abIdx < 0) atBatsValue = comboAtBats;
+    }
+    return { hitsValue, atBatsValue };
+  }
+
+  function findTeamBattingBlock(sum, teamId) {
+    const playerBatting = getSummaryPlayerBlocks(sum).find(player =>
+      player.team?.id == teamId && player.statistics?.some(stat => stat.type === 'batting')
+    );
+    return playerBatting?.statistics?.find(stat => stat.type === 'batting') || null;
+  }
+
+  function findTeamPitchingBlock(sum, teamId) {
+    const playerPitching = getSummaryPlayerBlocks(sum).find(player =>
+      player.team?.id == teamId && player.statistics?.some(stat => stat.type === 'pitching')
+    );
+    return playerPitching?.statistics?.find(stat => stat.type === 'pitching') || null;
+  }
+
+  function extractPitchingStatLine(block, athlete) {
+    const stats = athlete?.stats || [];
+    const ipIdx = findBlockIndex(block, value => /^ip$/i.test(value) || /innings/i.test(value));
+    const hIdx  = findBlockIndex(block, value => /^h$/i.test(value) || /^hits$/i.test(value));
+    const bbIdx = findBlockIndex(block, value => /^bb$/i.test(value) || /^walks$/i.test(value));
+    const kIdx  = findBlockIndex(block, value => /^k$/i.test(value) || /^strikeouts$/i.test(value));
+    const erIdx = findBlockIndex(block, value => /^er$/i.test(value) || /^earned\s*runs?$/i.test(value));
+    const ipStr = ipIdx >= 0 ? String(stats[ipIdx] ?? '0') : '0';
+    const ipDec = ipToDecimal(ipStr);
+    const h  = hIdx  >= 0 ? parseInt(stats[hIdx]  ?? '0', 10) || 0 : 0;
+    const bb = bbIdx >= 0 ? parseInt(stats[bbIdx] ?? '0', 10) || 0 : 0;
+    const k  = kIdx  >= 0 ? parseInt(stats[kIdx]  ?? '0', 10) || 0 : 0;
+    const er = erIdx >= 0 ? parseInt(stats[erIdx] ?? '0', 10) || 0 : 0;
+    return { ipDec, h, bb, k, er };
+  }
+
+  async function fetchTeamBullpenLast10(teamId) {
+    let events = [];
+    for (const y of [...ANALYSIS_SEASONS].sort((a,b)=>b-a)) {
+      if (events.length >= 15) break;
+      try {
+        const data = await fetchTeamSchedule(teamId, y);
+        const evs = (data.events || []).filter(ev => ev.competitions?.[0]?.status?.type?.state === 'post');
+        events = events.concat(evs);
+      } catch (_) {}
+    }
+    events.sort((a,b)=> new Date(b.date) - new Date(a.date));
+    const last = events.slice(0, 10);
+    const results = await Promise.allSettled(last.map(async ev => {
+      const comp = ev.competitions?.[0];
+      const eid = ev.id || comp?.id;
+      try {
+        const sum = await fetchGameSummary(eid);
+        const pitchingBlock = findTeamPitchingBlock(sum, teamId);
+        let ip = 0, h = 0, bb = 0, k = 0, er = 0;
+        for (const athlete of (pitchingBlock?.athletes || [])) {
+          const isStarter = !!athlete?.starter;
+          if (isStarter) continue;
+          const row = extractPitchingStatLine(pitchingBlock, athlete);
+          ip += row.ipDec; h += row.h; bb += row.bb; k += row.k; er += row.er;
+        }
+        return { ip, h, bb, k, er };
+      } catch (_) {
+        return { ip:0,h:0,bb:0,k:0,er:0 };
+      }
+    }));
+    const rows = results.filter(r => r.status==='fulfilled').map(r => r.value);
+    const n = rows.length || 1;
+    const sumIP = rows.reduce((a,r)=>a+r.ip,0);
+    const sumH  = rows.reduce((a,r)=>a+r.h,0);
+    const sumBB = rows.reduce((a,r)=>a+r.bb,0);
+    const sumK  = rows.reduce((a,r)=>a+r.k,0);
+    const sumER = rows.reduce((a,r)=>a+r.er,0);
+    const era  = sumIP > 0 ? (sumER * 9) / sumIP : 0;
+    const whip = sumIP > 0 ? (sumH + sumBB) / sumIP : 0;
+    const k9   = sumIP > 0 ? (sumK * 9) / sumIP : 0;
+    const ipPerGame = sumIP / n;
+    return { era, whip, k9, ipPerGame, games: n };
+  }
+
+  async function fetchTeamLast10Offense(teamId) {
+    let events = [];
+    for (const y of [...ANALYSIS_SEASONS].sort((a,b)=>b-a)) {
+      if (events.length >= 15) break;
+      try {
+        const data = await fetchTeamSchedule(teamId, y);
+        const evs = (data.events || []).filter(ev => {
+          const c = ev.competitions?.[0];
+          return c?.status?.type?.state === 'post';
+        });
+        events = events.concat(evs);
+      } catch (_) {}
+    }
+    events.sort((a,b)=> new Date(b.date) - new Date(a.date));
+    const last = events.slice(0, 10);
+    const results = await Promise.allSettled(last.map(async ev => {
+      const comp = ev.competitions?.[0];
+      const eid = ev.id || comp?.id;
+      const teamComp = comp?.competitors?.find(cc => cc.team?.id == teamId);
+      const homeAway = teamComp?.homeAway || '';
+      const oppTeamId = comp?.competitors?.find(cc => cc.team?.id != teamId)?.team?.id;
+      let runs = 0, ks = 0, hits = 0;
+      let hotHitters = 0, coldHitters = 0, activeHitters = 0;
+      let hand = '';
+      try {
+        const sum = await fetchGameSummary(eid);
+        const t = (sum.boxscore?.teams || []).find(t => t.team?.id == teamId);
+        const bats = (t?.statistics || []).find(s => s.name === 'batting')?.stats || [];
+        runs = parseFloat((bats.find(s => s.name === 'runs')?.value) || 0);
+        ks = parseFloat((bats.find(s => s.name === 'strikeouts')?.value) || 0);
+        hits = parseFloat((bats.find(s => s.name === 'hits')?.value) || 0);
+        const battingBlock = findTeamBattingBlock(sum, teamId);
+        const athletes = battingBlock?.athletes || [];
+        for (const athlete of athletes) {
+          const { hitsValue, atBatsValue } = extractBatterStatLine(battingBlock, athlete);
+          if (atBatsValue <= 0) continue;
+          activeHitters += 1;
+          if (hitsValue > 0) hotHitters += 1;
+          else coldHitters += 1;
+        }
+        if (oppTeamId) {
+          const pitchingBlock = findTeamPitchingBlock(sum, oppTeamId);
+          const starter = (pitchingBlock?.athletes || []).find(a => !!a.starter);
+          const throws = starter?.athlete?.throws || '';
+          if (/LHP/i.test(String(throws))) hand = 'LHP';
+          else if (/RHP/i.test(String(throws))) hand = 'RHP';
+        }
+      } catch (_) {}
+      return { runs, ks, hits, homeAway, hotHitters, coldHitters, activeHitters, hand };
+    }));
+    const rows = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+    const n = rows.length || 1;
+    const sumR = rows.reduce((a,r)=>a+r.runs,0);
+    const sumK = rows.reduce((a,r)=>a+r.ks,0);
+    const sumH = rows.reduce((a,r)=>a+r.hits,0);
+    const sumHot = rows.reduce((a,r)=>a+r.hotHitters,0);
+    const sumCold = rows.reduce((a,r)=>a+r.coldHitters,0);
+    const sumActive = rows.reduce((a,r)=>a+r.activeHitters,0);
+    const rHome = rows.filter(r=>r.homeAway==='home');
+    const rAway = rows.filter(r=>r.homeAway==='away');
+    const rVsL = rows.filter(r=>r.hand==='LHP');
+    const rVsR = rows.filter(r=>r.hand==='RHP');
+    const avg = (arr, key) => arr.length ? arr.reduce((a,x)=>a+x[key],0)/arr.length : 0;
+    const recentThree = rows.slice(0, 3);
+    const recentFive = rows.slice(0, 5);
+    const hotRate = sumActive ? (sumHot / sumActive) : 0;
+    const coldRate = sumActive ? (sumCold / sumActive) : 0;
+    const recentThreeHits = recentThree.length ? avg(recentThree, 'hits') : 0;
+    const recentFiveHits = recentFive.length ? avg(recentFive, 'hits') : 0;
+    const hotScore = (avg(rows, 'hits') * 0.55) + (hotRate * 10 * 0.35) + ((recentThreeHits - recentFiveHits) * 0.6);
+    return {
+      rpg: sumR/n,
+      kpg: sumK/n,
+      hpg: sumH/n,
+      rpgHome: avg(rHome,'runs'),
+      rpgAway: avg(rAway,'runs'),
+      kpgHome: avg(rHome,'ks'),
+      kpgAway: avg(rAway,'ks'),
+      hpgHome: avg(rHome,'hits'),
+      hpgAway: avg(rAway,'hits'),
+      rpgVsL: avg(rVsL,'runs'),
+      rpgVsR: avg(rVsR,'runs'),
+      kpgVsL: avg(rVsL,'ks'),
+      kpgVsR: avg(rVsR,'ks'),
+      hpgVsL: avg(rVsL,'hits'),
+      hpgVsR: avg(rVsR,'hits'),
+      hotHittersPerGame: sumHot/n,
+      coldHittersPerGame: sumCold/n,
+      hotRate,
+      coldRate,
+      recentThreeHits,
+      recentFiveHits,
+      hotScore,
+      games: n
+    };
+  }
+
+  // ── Odds HTML ────────────────────────────────────────────
+  function oddsSection(competition, away, home) {
+    const odds = competition.odds?.[0];
+    if (!odds) return '';
+    const ml  = odds.moneyline;
+    const rl  = odds.pointSpread;
+    const tot = odds.total;
+
+    const awayML  = ml?.away?.close?.odds  ?? '–';
+    const homeML  = ml?.home?.close?.odds  ?? '–';
+    const awayRL  = rl?.away?.close?.line  ?? '';
+    const homeRL  = rl?.home?.close?.line  ?? '';
+    const overU   = tot?.over?.close?.line  ?? '–';
+    const overOdds= tot?.over?.close?.odds  ?? '';
+    const underOdds=tot?.under?.close?.odds ?? '';
+
+    return `
+      <div class="odds-section">
+        <span class="odds-label">Momios DraftKings:</span>
+        <span class="odds-pill"><span>${away.team.abbreviation} ML</span>${awayML}</span>
+        <span class="odds-pill"><span>${home.team.abbreviation} ML</span>${homeML}</span>
+        ${awayRL?`<span class="odds-pill"><span>RL</span>${awayRL} / ${homeRL}</span>`:''}
+        <span class="odds-pill"><span>O/U</span>${overU} (${overOdds}/${underOdds})</span>
+      </div>`;
+  }
+
+  // ── Parse innings pitched string "6.2" → decimal 6.667 ──
+  function ipToDecimal(ipStr) {
+    if (!ipStr) return 0;
+    const parts = String(ipStr).split('.');
+    return parseFloat(parts[0]) + (parseFloat(parts[1]||0) / 3);
+  }
+
+  // ── Fetch gamelog for a pitcher ──────────────────────────
+  async function fetchGamelog(athleteId) {
+    const currentYear = new Date().getFullYear();
+    // Try current season, fall back to previous if no events found
+    for (let yr = currentYear; yr >= currentYear - 1; yr--) {
+      const url = `https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${athleteId}/gamelog?season=${yr}&category=pitching`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      // Check if there are any events across seasonTypes
+      const hasGames = (data.seasonTypes ?? []).some(
+        st => (st.categories ?? []).some(cat => (cat.events ?? []).length > 0)
+      );
+      if (hasGames) return data;
+    }
+    throw new Error('Sin datos en temporadas recientes');
+  }
+
+  // ── Parse gamelog → last-10 games array ─────────────────
+  function parseGamelog(data) {
+    return parseGamelogAll(data).slice(0, 10);
+  }
+
+  // ── Render stats for one pitcher column ─────────────────
+  function renderPitcherStats(games, name, teamAbr) {
+    if (!games.length) {
+      return `<div class="stats-error">Sin datos disponibles</div>`;
+    }
+
+    const maxIP = Math.max(...games.map(g=>g.ipDec), 0.1);
+    const maxK  = Math.max(...games.map(g=>g.k), 1);
+    const avgIP = (games.reduce((a,g)=>a+g.ipDec,0)/games.length).toFixed(1);
+    const avgK  = (games.reduce((a,g)=>a+g.k,0)/games.length).toFixed(1);
+    const avgH  = (games.reduce((a,g)=>a+parseFloat(g.h||0),0)/games.length).toFixed(1);
+    const avgBB = (games.reduce((a,g)=>a+parseFloat(g.bb||0),0)/games.length).toFixed(1);
+
+    const rows = games.map(g => {
+      const ipPct = Math.round((g.ipDec / maxIP) * 100);
+      const kPct  = Math.round((g.k  / maxK)  * 100);
+      const resultCls = g.result === 'W' ? 'res-w' : g.result === 'L' ? 'res-l' : '';
+      
+      const isAway = g.opp.includes('@');
+      const symbol = isAway ? '@' : 'vs';
+      const team = g.opp.replace('@','').replace('vs','').trim();
+
+      return `
+        <div class="game-row">
+          <span class="game-date">${g.date}</span>
+          <span class="game-opp">
+            <span class="${isAway ? 'symbol-at' : 'symbol-vs'}">${symbol}</span>
+            ${team}
+            ${g.isPost ? `<span class="po-badge">PO</span>` : ''}
+          </span>
+          <div class="bar-wrap">
+            <div class="bar-track"><div class="bar-fill ip-bar" style="width:${ipPct}%"></div></div>
+            <div class="bar-track"><div class="bar-fill k-bar"  style="width:${kPct}%"></div></div>
+            <div class="game-line-score">
+               ${g.h}H · ${g.r}R · ${g.bb}BB
+            </div>
+          </div>
+          <div class="bar-values">
+            <span class="v-ip">${g.ip} IP</span>
+            <span class="v-k">${g.k}K</span>
+            ${g.result ? `<span class="res-badge ${resultCls}">${g.result}</span>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="pitcher-stats-name">
+        ${name}
+        <span class="team-tag">${teamAbr}</span>
+      </div>
+      <div class="avg-row">
+        <div class="avg-pill highlight">
+          <div class="avg-val">${avgIP}</div>
+          <div class="avg-lbl">IP prom.</div>
+        </div>
+        <div class="avg-pill highlight">
+          <div class="avg-val">${avgK}</div>
+          <div class="avg-lbl">K prom.</div>
+        </div>
+        <div class="avg-pill">
+          <div class="avg-val">${avgH}</div>
+          <div class="avg-lbl">H prom.</div>
+        </div>
+        <div class="avg-pill">
+          <div class="avg-val">${avgBB}</div>
+          <div class="avg-lbl">BB prom.</div>
+        </div>
+      </div>
+      <div class="stats-legend">
+        <span><span class="legend-dot ip"></span>IP</span>
+        <span><span class="legend-dot k"></span>K</span>
+        <span><span class="symbol-at">@</span> Visitante</span>
+        <span><span class="symbol-vs">vs</span> Local</span>
+        <span><span class="po-badge">PO</span> Postemporada</span>
+      </div>
+      <div class="game-rows">${rows}</div>`;
+  }
+
+  // ── Skeleton while loading ───────────────────────────────
+  function skeletonRows() {
+    return `<div class="skeleton-rows">${[...Array(5)].map(()=>`<div class="skeleton-row"></div>`).join('')}</div>`;
+  }
+
+  // ── Load and render comparison for a card ───────────────
+  async function loadComparison(panelEl, away, home, awayPitcher, homePitcher) {
+    const awayId = awayPitcher?.athlete?.id;
+    const homeId = homePitcher?.athlete?.id;
+    const awayName = awayPitcher?.athlete?.fullName ?? 'Por confirmar';
+    const homeName = homePitcher?.athlete?.fullName ?? 'Por confirmar';
+    const awayAbr  = away.team.abbreviation;
+    const homeAbr  = home.team.abbreviation;
+    const cardKey = panelEl.id.replace('panel-','');
+
+    panelEl.innerHTML = `
+      <div class="stats-panel-title">📊 Últimos 10 Juegos – Pitchers Abridores</div>
+      <div id="advice-box" class="advice" style="display:none">
+        <div class="advice-title">Sugerencia de apuesta</div>
+        <div class="advice-row" id="advice-row"></div>
+        <div class="advice-expl" id="advice-expl"></div>
+        <div class="advice-def">IP prom = entradas lanzadas promedio · WHIP = (H+BB)/IP · K/BB = ponches por base por bolas</div>
+      </div>
+      <div class="compare-grid">
+        <div class="pitcher-stats-col" id="col-away">${skeletonRows()}</div>
+        <div class="pitcher-stats-col" id="col-home">${skeletonRows()}</div>
+      </div>`;
+    panelEl.classList.add('open');
+
+    const [awayResult, homeResult] = await Promise.allSettled([
+      awayId ? fetchPitcherMultiSeasonGames(awayId, ANALYSIS_SEASONS) : Promise.reject(new Error('Sin ID')),
+      homeId ? fetchPitcherMultiSeasonGames(homeId, ANALYSIS_SEASONS) : Promise.reject(new Error('Sin ID'))
+    ]);
+
+    const colAway = panelEl.querySelector('#col-away');
+    const colHome = panelEl.querySelector('#col-home');
+
+    if (awayResult.status === 'fulfilled') {
+      const games = awayResult.value.slice(0, 10);
+      colAway.innerHTML = renderPitcherStats(games, awayName, awayAbr);
+    } else {
+      colAway.innerHTML = `
+        <div class="pitcher-stats-name">${awayName} <span class="team-tag">${awayAbr}</span></div>
+        <div class="stats-error">⚠️ No se pudieron cargar estadísticas</div>`;
+    }
+
+    if (homeResult.status === 'fulfilled') {
+      const games = homeResult.value.slice(0, 10);
+      colHome.innerHTML = renderPitcherStats(games, homeName, homeAbr);
+    } else {
+      colHome.innerHTML = `
+        <div class="pitcher-stats-name">${homeName} <span class="team-tag">${homeAbr}</span></div>
+        <div class="stats-error">⚠️ No se pudieron cargar estadísticas</div>`;
+    }
+
+    try {
+      const gAway = awayResult.status === 'fulfilled' ? awayResult.value : [];
+      const gHome = homeResult.status === 'fulfilled' ? homeResult.value : [];
+      const summarize = (games) => {
+        const totals = games.reduce((acc,g)=>({
+          ip: acc.ip + g.ipDec,
+          k: acc.k + g.k,
+          bb: acc.bb + (g.bb||0),
+          h: acc.h + (g.h||0),
+          r: acc.r + (g.r||0),
+          n: acc.n + 1
+        }), {ip:0,k:0,bb:0,h:0,r:0,n:0});
+        const avg = (v) => totals.n ? (v/totals.n) : 0;
+        const whip = totals.ip > 0 ? (totals.h + totals.bb) / totals.ip : 0;
+        const kbb = (totals.bb > 0) ? (totals.k / totals.bb) : totals.k;
+        const homeGames = games.filter(g=>!g.opp.includes('@'));
+        const awayGames = games.filter(g=> g.opp.includes('@'));
+        const sumSplit = (arr) => {
+          const t = arr.reduce((a,g)=>({
+            ip: a.ip + g.ipDec,
+            k: a.k + g.k,
+            bb: a.bb + (g.bb||0),
+            h: a.h + (g.h||0),
+            r: a.r + (g.r||0),
+            n: a.n + 1
+          }), {ip:0,k:0,bb:0,h:0,r:0,n:0});
+          return {
+            avgIP: t.n ? t.ip/t.n : 0,
+            avgK: t.n ? t.k/t.n : 0,
+            whip: t.ip>0 ? (t.h + t.bb)/t.ip : 0,
+            n: t.n
+          };
+        };
+        const splitHome = sumSplit(homeGames);
+        const splitAway = sumSplit(awayGames);
+        return {
+          avgIP: avg(totals.ip),
+          avgK: avg(totals.k),
+          avgBB: avg(totals.bb),
+          avgH: avg(totals.h),
+          avgR: avg(totals.r),
+          ip: totals.ip,
+          k: totals.k,
+          bb: totals.bb,
+          h: totals.h,
+          r: totals.r,
+          whip,
+          kbb,
+          splitHome,
+          splitAway
+        };
+      };
+      const contextualPitcherScore = (stats, focus) => {
+        const preferred = focus === 'home' ? stats.splitHome : stats.splitAway;
+        const other = focus === 'home' ? stats.splitAway : stats.splitHome;
+        const splitWeight = preferred.n >= 6 ? 0.65 : preferred.n >= 3 ? 0.45 : preferred.n >= 1 ? 0.25 : 0;
+        const avgIP = (stats.avgIP * (1 - splitWeight)) + (preferred.avgIP * splitWeight);
+        const avgK = (stats.avgK * (1 - splitWeight)) + (preferred.avgK * splitWeight);
+        const whip = (stats.whip * (1 - splitWeight)) + (preferred.whip * splitWeight);
+        const splitEdge = preferred.n ? ((preferred.avgIP - other.avgIP) * 0.55) + ((preferred.avgK - other.avgK) * 0.18) - ((preferred.whip - other.whip) * 1.2) : 0;
+        const score = (avgIP * 0.55) + (avgK * 0.12) + (stats.kbb * 0.65) - (whip * 1.7) + splitEdge;
+        return { score, splitWeight, preferred, other, splitEdge, focus, avgIP, avgK, whip };
+      };
+      const A = summarize(gAway);
+      const H = summarize(gHome);
+      const awayContext = contextualPitcherScore(A, 'away');
+      const homeContext = contextualPitcherScore(H, 'home');
+      const sAway = awayContext.score;
+      const sHome = homeContext.score;
+      const edge = sHome - sAway;
+      const better = edge > 0 ? 'home' : 'away';
+      const strength = Math.abs(edge);
+      const btn = document.querySelector(`[id^="btn-"][data-card="${panelEl.id.replace('panel-','')}"]`) || null;
+      const mlAway = btn ? parseFloat(btn.dataset.mlAway || '') : NaN;
+      const mlHome = btn ? parseFloat(btn.dataset.mlHome || '') : NaN;
+      const ouLine = btn ? parseFloat(btn.dataset.ouLine || '') : NaN;
+      const awayTeamId = btn?.dataset.awayTeamId;
+      const homeTeamId = btn?.dataset.homeTeamId;
+      const tempF = btn?.dataset.temp ? parseFloat(btn.dataset.temp) : NaN;
+      const isIndoor = (btn?.dataset.indoor || '').toString() === 'true';
+      const gameId = btn?.dataset?.eventId || '';
+      const mlAwayOpen = btn ? parseFloat(btn.dataset.mlAwayOpen || '') : NaN;
+      const mlHomeOpen = btn ? parseFloat(btn.dataset.mlHomeOpen || '') : NaN;
+      const ouOpen = btn ? parseFloat(btn.dataset.ouOpen || '') : NaN;
+      const venueName = btn?.dataset?.venue || '';
+      const implied = (ml) => {
+        if (isNaN(ml)) return NaN;
+        if (ml < 0) return (-ml)/((-ml)+100);
+        return 100/(ml+100);
+      };
+      const noVig = (away, home) => {
+        if (isNaN(away) || isNaN(home)) return { away: NaN, home: NaN };
+        const pA = implied(away);
+        const pH = implied(home);
+        const denom = pA + pH;
+        if (denom <= 0) return { away: NaN, home: NaN };
+        return { away: pA/denom, home: pH/denom };
+      };
+      const pAway = implied(mlAway);
+      const pHome = implied(mlHome);
+      const pNoVig = noVig(mlAway, mlHome);
+      const moveMlAway = isNaN(mlAwayOpen)||isNaN(mlAway) ? NaN : mlAway - mlAwayOpen;
+      const moveMlHome = isNaN(mlHomeOpen)||isNaN(mlHome) ? NaN : mlHome - mlHomeOpen;
+      const moveOu = isNaN(ouOpen)||isNaN(ouLine) ? NaN : ouLine - ouOpen;
+      let offAway = {rpg:0,kpg:0,hpg:0,hotRate:0,coldRate:0,hotHittersPerGame:0,coldHittersPerGame:0,recentThreeHits:0,recentFiveHits:0,hotScore:0};
+      let offHome = {rpg:0,kpg:0,hpg:0,hotRate:0,coldRate:0,hotHittersPerGame:0,coldHittersPerGame:0,recentThreeHits:0,recentFiveHits:0,hotScore:0};
+      let teamAvgAway = {avg:0,avgDisplay:'.000',ops:0,opsDisplay:'.000'};
+      let teamAvgHome = {avg:0,avgDisplay:'.000',ops:0,opsDisplay:'.000'};
+      try {
+        const [rAwayRes, rHomeRes, kAwayRes, kHomeRes, avgAwayRes, avgHomeRes, penAwayRes, penHomeRes] = await Promise.allSettled([
+          awayTeamId ? fetchTeamMergedSeasonOffense(awayTeamId, ANALYSIS_SEASONS) : Promise.reject(),
+          homeTeamId ? fetchTeamMergedSeasonOffense(homeTeamId, ANALYSIS_SEASONS) : Promise.reject(),
+          awayTeamId ? fetchTeamLast10Offense(awayTeamId) : Promise.reject(),
+          homeTeamId ? fetchTeamLast10Offense(homeTeamId) : Promise.reject(),
+          awayTeamId ? fetchTeamSeasonBatting(awayTeamId, 2025) : Promise.reject(),
+          homeTeamId ? fetchTeamSeasonBatting(homeTeamId, 2025) : Promise.reject(),
+          awayTeamId ? fetchTeamBullpenLast10(awayTeamId) : Promise.reject(),
+          homeTeamId ? fetchTeamBullpenLast10(homeTeamId) : Promise.reject()
+        ]);
+        const seasonAway = rAwayRes.status==='fulfilled' ? rAwayRes.value : { rpg: 0, rpgHome: 0, rpgAway: 0, games: 0 };
+        const seasonHome = rHomeRes.status==='fulfilled' ? rHomeRes.value : { rpg: 0, rpgHome: 0, rpgAway: 0, games: 0 };
+        const lastAway = kAwayRes.status==='fulfilled' ? kAwayRes.value : offAway;
+        const lastHome = kHomeRes.status==='fulfilled' ? kHomeRes.value : offHome;
+        teamAvgAway = avgAwayRes.status==='fulfilled' ? avgAwayRes.value : teamAvgAway;
+        teamAvgHome = avgHomeRes.status==='fulfilled' ? avgHomeRes.value : teamAvgHome;
+        offAway = { ...lastAway, seasonRpg: seasonAway.rpg, seasonRpgHome: seasonAway.rpgHome, seasonRpgAway: seasonAway.rpgAway };
+        offHome = { ...lastHome, seasonRpg: seasonHome.rpg, seasonRpgHome: seasonHome.rpgHome, seasonRpgAway: seasonHome.rpgAway };
+        var penAway = penAwayRes.status==='fulfilled' ? penAwayRes.value : {era:0,whip:0,k9:0,ipPerGame:0};
+        var penHome = penHomeRes.status==='fulfilled' ? penHomeRes.value : {era:0,whip:0,k9:0,ipPerGame:0};
+      } catch (_) {}
+      const awayAttackContext = (offAway.seasonRpgAway * 0.45) + (offAway.rpg * 0.3) + (offAway.hpg * 0.08) + (offAway.hotScore * 0.07) + (teamAvgAway.avg * 12);
+      const homeAttackContext = (offHome.seasonRpgHome * 0.45) + (offHome.rpg * 0.3) + (offHome.hpg * 0.08) + (offHome.hotScore * 0.07) + (teamAvgHome.avg * 12);
+      let overUnderSignal = (A.avgR + H.avgR)*0.45 + (awayAttackContext + homeAttackContext)*0.55;
+      if (!isIndoor && !isNaN(tempF)) {
+        if (tempF >= 85) overUnderSignal += 0.5;
+        if (tempF <= 55) overUnderSignal -= 0.5;
+      }
+      const pf = getParkFactor(venueName);
+      overUnderSignal *= pf;
+      if (penAway.whip && penHome.whip) {
+        if (penAway.whip <= 1.25 && penHome.whip <= 1.25) overUnderSignal -= 0.35;
+        if (penAway.whip >= 1.45 || penHome.whip >= 1.45) overUnderSignal += 0.35;
+      }
+      if (penAway.era && penHome.era) {
+        if (penAway.era <= 3.70 && penHome.era <= 3.70) overUnderSignal -= 0.25;
+        if (penAway.era >= 4.60 || penHome.era >= 4.60) overUnderSignal += 0.25;
+      }
+      let ouPick = null;
+      if (overUnderSignal >= 7.2) ouPick = {side: 'Over', badge:'strong'};
+      else if (overUnderSignal >= 6.2) ouPick = {side: 'Over', badge:'lean'};
+      else if (overUnderSignal <= 4.8) ouPick = {side: 'Under', badge:'strong'};
+      else if (overUnderSignal <= 5.6) ouPick = {side: 'Under', badge:'lean'};
+      const mlPick = (() => {
+        if (strength < 0.6) return null;
+        const side = better === 'home' ? homeAbr : awayAbr;
+        const badge = strength >= 1.6 ? 'strong' : 'lean';
+        return {side, badge, better};
+      })();
+      const lastName = (full) => (full||'').split(' ').slice(-1)[0] || '';
+      const awayLast = lastName(awayName);
+      const homeLast = lastName(homeName);
+      const awayThrows = (awayPitcher?.athlete?.throws || '').toString();
+      const homeThrows = (homePitcher?.athlete?.throws || '').toString();
+      const isAwayLHP = /LHP/i.test(awayThrows);
+      const isHomeLHP = /LHP/i.test(homeThrows);
+      const oppVsHandAwayPitch = isAwayLHP ? Number(offHome.rpgVsL||NaN) : Number(offHome.rpgVsR||NaN);
+      const oppVsHandHomePitch = isHomeLHP ? Number(offAway.rpgVsL||NaN) : Number(offAway.rpgVsR||NaN);
+      const kPickAway = (() => {
+        if (!awayId) return null;
+        if (awayContext.avgK >= 6.5 && offHome.kpg >= 9) return {which:`K ${awayLast}`, side:'Over', badge: awayContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (awayContext.avgK <= 5.0 && offHome.kpg <= 7.4) return {which:`K ${awayLast}`, side:'Under', badge:'lean'};
+        return null;
+      })();
+      const kPickHome = (() => {
+        if (!homeId) return null;
+        if (homeContext.avgK >= 6.5 && offAway.kpg >= 9) return {which:`K ${homeLast}`, side:'Over', badge: homeContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (homeContext.avgK <= 5.0 && offAway.kpg <= 7.4) return {which:`K ${homeLast}`, side:'Under', badge:'lean'};
+        return null;
+      })();
+      const ipPickAway = (() => {
+        if (!awayId) return null;
+        const ip = awayContext.avgIP || A.avgIP;
+        const homeAtkAdj = isNaN(oppVsHandAwayPitch) ? homeAttackContext : (homeAttackContext*0.6 + oppVsHandAwayPitch*0.4);
+        if (ip >= 6.0 && homeAtkAdj <= 4.9) return {which:`IP ${awayLast}`, side:'Over', badge: awayContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (ip <= 5.0 && homeAtkAdj >= 5.6) return {which:`IP ${awayLast}`, side:'Under', badge:'lean'};
+        return null;
+      })();
+      const ipPickHome = (() => {
+        if (!homeId) return null;
+        const ip = homeContext.avgIP || H.avgIP;
+        const awayAtkAdj = isNaN(oppVsHandHomePitch) ? awayAttackContext : (awayAttackContext*0.6 + oppVsHandHomePitch*0.4);
+        if (ip >= 6.0 && awayAtkAdj <= 4.9) return {which:`IP ${homeLast}`, side:'Over', badge: homeContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (ip <= 5.0 && awayAtkAdj >= 5.6) return {which:`IP ${homeLast}`, side:'Under', badge:'lean'};
+        return null;
+      })();
+      const row = panelEl.querySelector('#advice-row');
+      const box = panelEl.querySelector('#advice-box');
+      const explEl = panelEl.querySelector('#advice-expl');
+      if (row && box) {
+        const pills = [];
+        const penScore = (p) => {
+          const w = Number(p.whip||0), e = Number(p.era||0), k = Number(p.k9||0);
+          if (!(w>0) || !(e>=0)) return NaN;
+          return (-w*1.4) + (-e*0.8) + (k*0.15);
+        };
+        const sPenAway = penScore(penAway);
+        const sPenHome = penScore(penHome);
+        const bestPen = (!isNaN(sPenAway) && !isNaN(sPenHome)) ? (sPenAway > sPenHome ? 'away' : 'home') : null;
+        if (bestPen) pills.push(`<span class="advice-pill">Bullpen mejor: ${bestPen==='home'?homeAbr:awayAbr} ★</span>`);
+        if (mlPick) pills.push(`<span class="advice-pill">ML ${mlPick.side} <span class="advice-badge ${mlPick.badge}">${mlPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        if (ouPick && !isNaN(ouLine)) pills.push(`<span class="advice-pill">${ouPick.side} ${ouLine} <span class="advice-badge ${ouPick.badge}">${ouPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        if (!isNaN(moveMlAway) || !isNaN(moveMlHome)) pills.push(`<span class="advice-pill">Movimiento ML ${awayAbr}: ${isNaN(moveMlAway)?'–':moveMlAway} · ${homeAbr}: ${isNaN(moveMlHome)?'–':moveMlHome}</span>`);
+        if (!isNaN(moveOu)) pills.push(`<span class="advice-pill">Movimiento Total: ${moveOu}</span>`);
+        if (kPickAway) pills.push(`<span class="advice-pill">${kPickAway.which} ${kPickAway.side} <span class="advice-badge ${kPickAway.badge}">${kPickAway.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        if (kPickHome) pills.push(`<span class="advice-pill">${kPickHome.which} ${kPickHome.side} <span class="advice-badge ${kPickHome.badge}">${kPickHome.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        if (ipPickAway) pills.push(`<span class="advice-pill">${ipPickAway.which} ${ipPickAway.side} <span class="advice-badge ${ipPickAway.badge}">${ipPickAway.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        if (ipPickHome) pills.push(`<span class="advice-pill">${ipPickHome.which} ${ipPickHome.side} <span class="advice-badge ${ipPickHome.badge}">${ipPickHome.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        const metaParts = [
+          `<span class="advice-pill">Edge ${better==='home'?homeAbr:awayAbr}: ${strength.toFixed(2)}</span>`,
+          `<span class="advice-pill">WHIP ${awayAbr}: ${awayContext.whip.toFixed(2)} · ${homeAbr}: ${homeContext.whip.toFixed(2)}</span>`,
+          `<span class="advice-pill">K/BB ${awayAbr}: ${A.kbb.toFixed(2)} · ${homeAbr}: ${H.kbb.toFixed(2)}</span>`,
+            `<span class="advice-pill">R/G 25+26 ${awayAbr}: ${offAway.seasonRpg.toFixed(1)} · ${homeAbr}: ${offHome.seasonRpg.toFixed(1)}</span>`,
+            (penAway.whip||penHome.whip) ? `<span class="advice-pill">Bullpen WHIP/ERA ${awayAbr}: ${penAway.whip.toFixed(2)}/${penAway.era.toFixed(2)} · ${homeAbr}: ${penHome.whip.toFixed(2)}/${penHome.era.toFixed(2)}</span>` : ''
+        ];
+        if (teamAvgAway.avgDisplay !== 'N/D' || teamAvgHome.avgDisplay !== 'N/D') {
+          metaParts.push(`<span class="advice-pill">AVG 2025 ${awayAbr}: ${teamAvgAway.avgDisplay} · ${homeAbr}: ${teamAvgHome.avgDisplay}</span>`);
+        }
+        metaParts.push(`<span class="advice-pill">Split vs L/R ${awayAbr}: R/G L ${Number(offAway.rpgVsL||0).toFixed(1)} · R ${Number(offAway.rpgVsR||0).toFixed(1)} · ${homeAbr}: L ${Number(offHome.rpgVsL||0).toFixed(1)} · R ${Number(offHome.rpgVsR||0).toFixed(1)}</span>`);
+        metaParts.push(`<span class="advice-pill">Bate caliente ${awayAbr}: ${offAway.hotHittersPerGame.toFixed(1)} con hit / ${offAway.coldHittersPerGame.toFixed(1)} sin hit · ${homeAbr}: ${offHome.hotHittersPerGame.toFixed(1)} / ${offHome.coldHittersPerGame.toFixed(1)}</span>`);
+        const meta = metaParts.join(' ');
+        row.innerHTML = (pills.length ? pills.join(' ') : `<span class="advice-badge noplay">Sin apuesta clara</span>`) + ' ' + meta;
+        box.style.display = 'block';
+        const summaryPicks = [];
+        if (mlPick) summaryPicks.push({ text: `ML ${mlPick.side}`, badge: mlPick.badge });
+        if (ouPick && !isNaN(ouLine)) summaryPicks.push({ text: `${ouPick.side} ${ouLine}`, badge: ouPick.badge });
+        if (kPickAway) summaryPicks.push({ text: `${kPickAway.which} ${kPickAway.side}`, badge: kPickAway.badge });
+        if (kPickHome) summaryPicks.push({ text: `${kPickHome.which} ${kPickHome.side}`, badge: kPickHome.badge });
+        if (ipPickAway) summaryPicks.push({ text: `${ipPickAway.which} ${ipPickAway.side}`, badge: ipPickAway.badge });
+        if (ipPickHome) summaryPicks.push({ text: `${ipPickHome.which} ${ipPickHome.side}`, badge: ipPickHome.badge });
+        if (summaryPicks.length) updateSummary(cardKey, awayAbr, homeAbr, summaryPicks, strength);
+        if (explEl) {
+          const parts = [];
+          if (mlPick) {
+            parts.push(`ML ${mlPick.side}: ventaja por perfil del abridor usando 2025+2026, con peso fuerte al split del día (${awayAbr} visitante IP ${awayContext.avgIP.toFixed(1)} / WHIP ${awayContext.whip.toFixed(2)}; ${homeAbr} local IP ${homeContext.avgIP.toFixed(1)} / WHIP ${homeContext.whip.toFixed(2)}; K/BB ${awayAbr} ${A.kbb.toFixed(2)} · ${homeAbr} ${H.kbb.toFixed(2)}).`);
+          }
+          if (ouPick && !isNaN(ouLine)) {
+            const wx = (!isIndoor && !isNaN(tempF)) ? `, clima ${tempF}°F` : '';
+            parts.push(`Total ${ouPick.side} ${ouLine}: señal = ${overUnderSignal.toFixed(1)} (pitchers ${(A.avgR + H.avgR).toFixed(1)} + ofensivas 25+26 ${(offAway.seasonRpg + offHome.seasonRpg).toFixed(1)} + hits recientes ${(offAway.hpg + offHome.hpg).toFixed(1)}${wx}).`);
+          }
+          if (!isNaN(pAway) && !isNaN(pHome)) {
+            parts.push(`Prob. implícita ML: ${awayAbr} ${(pAway*100).toFixed(0)}% · ${homeAbr} ${(pHome*100).toFixed(0)}%.`);
+          }
+          if (!isNaN(pNoVig.away) && !isNaN(pNoVig.home)) {
+            parts.push(`Sin vig ML: ${awayAbr} ${(pNoVig.away*100).toFixed(0)}% · ${homeAbr} ${(pNoVig.home*100).toFixed(0)}%.`);
+          }
+          if (!isNaN(moveMlAway) || !isNaN(moveMlHome)) {
+            parts.push(`Movimiento ML: ${awayAbr} ${isNaN(moveMlAway)?'–':moveMlAway} · ${homeAbr} ${isNaN(moveMlHome)?'–':moveMlHome}.`);
+          }
+          if (!isNaN(moveOu)) {
+            parts.push(`Movimiento total: ${moveOu}.`);
+          }
+          if (teamAvgAway.avgDisplay !== 'N/D' || teamAvgHome.avgDisplay !== 'N/D') {
+            parts.push(`AVG 2025: ${awayAbr} ${teamAvgAway.avgDisplay} · ${homeAbr} ${teamAvgHome.avgDisplay}.`);
+          }
+          parts.push(`Bate caliente reciente: ${awayAbr} ${offAway.hotHittersPerGame.toFixed(1)} con hit y ${offAway.coldHittersPerGame.toFixed(1)} sin hit por juego; ${homeAbr} ${offHome.hotHittersPerGame.toFixed(1)} y ${offHome.coldHittersPerGame.toFixed(1)}.`);
+          if (kPickAway || kPickHome) {
+            const kp = [];
+            if (kPickAway) kp.push(`${kPickAway.which} ${kPickAway.side} (K ajustado visita ${awayContext.avgK.toFixed(1)} vs K/G ${homeAbr} ${offHome.kpg.toFixed(1)})`);
+            if (kPickHome) kp.push(`${kPickHome.which} ${kPickHome.side} (K ajustado casa ${homeContext.avgK.toFixed(1)} vs K/G ${awayAbr} ${offAway.kpg.toFixed(1)})`);
+            parts.push(kp.join(' · '));
+          }
+          if (ipPickAway || ipPickHome) {
+            const ipt = [];
+            if (ipPickAway) {
+              const vsHandStr = isNaN(oppVsHandAwayPitch) ? '' : `, vs mano ${isAwayLHP?'L':'R'} ${homeAbr} ${oppVsHandAwayPitch.toFixed(1)}`;
+              ipt.push(`${ipPickAway.which} ${ipPickAway.side} (IP visita ${awayContext.avgIP.toFixed(1)} vs ataque ${homeAbr} ${homeAttackContext.toFixed(1)}${vsHandStr})`);
+            }
+            if (ipPickHome) {
+              const vsHandStr = isNaN(oppVsHandHomePitch) ? '' : `, vs mano ${isHomeLHP?'L':'R'} ${awayAbr} ${oppVsHandHomePitch.toFixed(1)}`;
+              ipt.push(`${ipPickHome.which} ${ipPickHome.side} (IP casa ${homeContext.avgIP.toFixed(1)} vs ataque ${awayAbr} ${awayAttackContext.toFixed(1)}${vsHandStr})`);
+            }
+            parts.push(ipt.join(' · '));
+          }
+          if (!isNaN(offAway.rpgVsL) || !isNaN(offAway.rpgVsR) || !isNaN(offHome.rpgVsL) || !isNaN(offHome.rpgVsR)) {
+            parts.push(`Split L/R: rendimiento vs lanzadores zurdos (L) o derechos (R). Ej: ${awayAbr} R/G L ${Number(offAway.rpgVsL||0).toFixed(1)} · R ${Number(offAway.rpgVsR||0).toFixed(1)}; ${homeAbr} L ${Number(offHome.rpgVsL||0).toFixed(1)} · R ${Number(offHome.rpgVsR||0).toFixed(1)}.`);
+          }
+          if ((penAway.whip||penAway.era) || (penHome.whip||penHome.era)) {
+            parts.push(`Bullpen: relevos que lanzan tras el abridor; WHIP/ERA bajas suelen permitir menos carreras, altas más carreras.`);
+          }
+          if (!parts.length) {
+            parts.push('Los abridores muestran métricas similares; sin ventaja suficiente.');
+          }
+          explEl.innerHTML = parts.join(' ');
+        }
+      aiPayloadMap[panelEl.id.replace('panel-','')] = {
+        gameId: gameId,
+        away: { abr: awayAbr, pitcherLast: awayLast },
+        home: { abr: homeAbr, pitcherLast: homeLast },
+        pitchers: {
+          away: { whip: Number(A.whip||0), kbb: Number(A.kbb||0), ipAvg: Number(A.avgIP||0), ipHome: Number(A.splitHome.avgIP||0), ipAway: Number(A.splitAway.avgIP||0), contextWhip: Number(awayContext.whip||0), contextIp: Number(awayContext.avgIP||0), focus: 'away', splitGames: Number(awayContext.preferred.n||0), splitEdge: Number(awayContext.splitEdge||0) },
+          home: { whip: Number(H.whip||0), kbb: Number(H.kbb||0), ipAvg: Number(H.avgIP||0), ipHome: Number(H.splitHome.avgIP||0), ipAway: Number(H.splitAway.avgIP||0), contextWhip: Number(homeContext.whip||0), contextIp: Number(homeContext.avgIP||0), focus: 'home', splitGames: Number(homeContext.preferred.n||0), splitEdge: Number(homeContext.splitEdge||0) }
+        },
+        offense: {
+          away: { rpg2526: Number(offAway.seasonRpg||0), rpg2526Home: Number(offAway.seasonRpgHome||0), rpg2526Away: Number(offAway.seasonRpgAway||0), kpgL10: Number(offAway.kpg||0), hpgL10: Number(offAway.hpg||0), hotRate: Number(offAway.hotRate||0), coldRate: Number(offAway.coldRate||0), hotHitters: Number(offAway.hotHittersPerGame||0), coldHitters: Number(offAway.coldHittersPerGame||0), avg2025: Number(teamAvgAway.avg||0), rpgVsL: Number(offAway.rpgVsL||0), rpgVsR: Number(offAway.rpgVsR||0) },
+          home: { rpg2526: Number(offHome.seasonRpg||0), rpg2526Home: Number(offHome.seasonRpgHome||0), rpg2526Away: Number(offHome.seasonRpgAway||0), kpgL10: Number(offHome.kpg||0), hpgL10: Number(offHome.hpg||0), hotRate: Number(offHome.hotRate||0), coldRate: Number(offHome.coldRate||0), hotHitters: Number(offHome.hotHittersPerGame||0), coldHitters: Number(offHome.coldHittersPerGame||0), avg2025: Number(teamAvgHome.avg||0), rpgVsL: Number(offHome.rpgVsL||0), rpgVsR: Number(offHome.rpgVsR||0) }
+        },
+        bullpen: {
+          away: { era: Number(penAway.era||0), whip: Number(penAway.whip||0), k9: Number(penAway.k9||0), ippg: Number(penAway.ipPerGame||0) },
+          home: { era: Number(penHome.era||0), whip: Number(penHome.whip||0), k9: Number(penHome.k9||0), ippg: Number(penHome.ipPerGame||0) }
+        },
+        odds: { mlAway: isNaN(mlAway)?null:mlAway, mlHome: isNaN(mlHome)?null:mlHome, total: isNaN(ouLine)?null:ouLine, novig: { away: isNaN(pNoVig.away)?null:pNoVig.away, home: isNaN(pNoVig.home)?null:pNoVig.home } },
+        weather: { tempF: isNaN(tempF)?null:tempF, indoor: !!isIndoor, windMph: (()=>{ const w = btn?.dataset.wind || ''; const m = String(w).match(/(\\d+\\.?\\d*)\\s*mph/i); return m ? Number(m[1]) : null; })() },
+        market: { mlOpen: { away: isNaN(mlAwayOpen)?null:mlAwayOpen, home: isNaN(mlHomeOpen)?null:mlHomeOpen }, mlClose: { away: isNaN(mlAway)?null:mlAway, home: isNaN(mlHome)?null:mlHome }, ouOpen: isNaN(ouOpen)?null:ouOpen, ouClose: isNaN(ouLine)?null:ouLine, move: { mlAway: isNaN(moveMlAway)?null:moveMlAway, mlHome: isNaN(moveMlHome)?null:moveMlHome, total: isNaN(moveOu)?null:moveOu } },
+        venue: { name: venueName, parkFactor: Number(pf||1) }
+      };
+      }
+    } catch (_) {}
+  }
+
+  // ── Main card builder ─────────────────────────────────────
+  let cardCounter = 0;
+
+  function buildCard(event) {
+    const comp  = event.competitions?.[0];
+    const comps = comp?.competitors ?? [];
+    const away  = comps.find(c => c.homeAway === 'away');
+    const home  = comps.find(c => c.homeAway === 'home');
+    if (!away || !home) return '';
+
+    const st     = statusInfo(event);
+    const venue  = comp?.venue?.fullName ?? '';
+    const state  = comp?.venue?.address?.state ?? '';
+    const bcast  = comp?.broadcast ?? '';
+    const weather= event.weather;
+
+    const awayPitcher = away.probables?.find(p => p.name === 'probableStartingPitcher');
+    const homePitcher = home.probables?.find(p => p.name === 'probableStartingPitcher');
+
+    const awayLineArr = away.linescores ?? [];
+    const homeLineArr = home.linescores ?? [];
+
+    const weatherStr = weather ? `🌤 ${weather.temperature}°F · ${weather.conditionId ?? ''}` : '';
+
+    const cardId = `card-${cardCounter++}`;
+    const hasAnyPitcher = awayPitcher || homePitcher;
+
+    // Store data for async load
+    const awayData = JSON.stringify({ id: awayPitcher?.athlete?.id, name: awayPitcher?.athlete?.fullName });
+    const homeData = JSON.stringify({ id: homePitcher?.athlete?.id, name: homePitcher?.athlete?.fullName });
+
+    const odds0 = comp?.odds?.[0];
+    const mlAway = odds0?.moneyline?.away?.close?.odds ?? odds0?.moneyline?.away?.open?.odds ?? '';
+    const mlHome = odds0?.moneyline?.home?.close?.odds ?? odds0?.moneyline?.home?.open?.odds ?? '';
+    const ouLine = odds0?.total?.over?.close?.line ?? odds0?.total?.over?.open?.line ?? '';
+    const mlAwayOpen = odds0?.moneyline?.away?.open?.odds ?? '';
+    const mlHomeOpen = odds0?.moneyline?.home?.open?.odds ?? '';
+    const ouOpen = odds0?.total?.over?.open?.line ?? '';
+
+    return `
+    <div class="game-card" id="${cardId}">
+
+      <!-- Strip superior -->
+      <div class="card-top">
+        <span>${event.shortName}</span>
+        ${bcast ? `<span class="tv">📺 ${bcast}</span>` : ''}
+        ${weatherStr ? `<span class="weather-info">${weatherStr}</span>` : ''}
+      </div>
+
+      <!-- Scoreline -->
+      <div class="card-body">
+        <div class="team away">
+          <img class="team-logo" src="${away.team.logo}" alt="${away.team.displayName}"
+               onerror="this.style.display='none'" />
+          <div class="team-meta">
+            <div class="team-name">${away.team.displayName}</div>
+            <div class="team-side">Visitante</div>
+            <div class="team-record">${getRecord(away)}</div>
+          </div>
+        </div>
+
+        <div class="score-box">
+          <div class="score">${away.score} – ${home.score}</div>
+          <div><span class="status-badge ${st.cls}">${st.label}</span></div>
+          ${st.cls==='post' ? linescoreDots([...awayLineArr,...homeLineArr].slice(0,9)) : ''}
+        </div>
+
+        <div class="team home">
+          <img class="team-logo" src="${home.team.logo}" alt="${home.team.displayName}"
+               onerror="this.style.display='none'" />
+          <div class="team-meta">
+            <div class="team-name">${home.team.displayName}</div>
+            <div class="team-side">Local</div>
+            <div class="team-record">${getRecord(home)}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pitchers abridores -->
+      <div class="pitchers-section">
+        ${pitcherCard(awayPitcher, '⚾ Abridor · ' + away.team.abbreviation)}
+        ${pitcherCard(homePitcher, '⚾ Abridor · ' + home.team.abbreviation)}
+      </div>
+
+      <!-- Botón comparar -->
+      <div class="compare-btn-row">
+        <button class="compare-btn"
+                id="btn-${cardId}"
+                data-card="${cardId}"
+                data-away='${awayData}'
+                data-home='${homeData}'
+                data-away-abr="${away.team.abbreviation}"
+                data-home-abr="${home.team.abbreviation}"
+                data-away-team-id="${away.team.id}"
+                data-home-team-id="${home.team.id}"
+                data-temp="${weather?.temperature ?? ''}"
+                data-indoor="${weather?.isIndoor ?? ''}"
+                data-wind="${weather?.wind ?? ''}"
+                data-away-logo="${away.team.logo}"
+                data-home-logo="${home.team.logo}"
+                data-evt-time="${event.date}"
+                data-event-id="${event.id || comp?.id || ''}"
+                data-ml-away="${mlAway}"
+                data-ml-home="${mlHome}"
+                data-ou-line="${ouLine}"
+                data-ml-away-open="${mlAwayOpen}"
+                data-ml-home-open="${mlHomeOpen}"
+                data-ou-open="${ouOpen}"
+                data-venue="${venue}"
+                data-away-pitcher='${JSON.stringify(awayPitcher || null)}'
+                data-home-pitcher='${JSON.stringify(homePitcher || null)}'
+                onclick="compareAction(this)">
+          📈 Ver estadísticas – Últimos 10 juegos
+        </button>
+      </div>
+
+      <!-- Stats panel (hidden until click) -->
+      <div class="stats-panel" id="panel-${cardId}"></div>
+
+      <!-- Momios -->
+      ${oddsSection(comp, away, home)}
+
+      <!-- Footer: estadio -->
+      <div class="card-footer">
+        ${venue ? `<span>🏟️ ${venue}${state ? ', '+state : ''}</span>` : ''}
+        ${comp?.tickets?.[0]?.summary ? `<span>🎟️ ${comp.tickets[0].summary}</span>` : ''}
+      </div>
+
+    </div>`;
+  }
+
+  // ── Toggle stats panel ───────────────────────────────────
+  async function toggleStats(btn) {
+    const cardId = btn.dataset.card;
+    const panel  = document.getElementById(`panel-${cardId}`);
+
+    if (panel.classList.contains('open')) {
+      panel.classList.remove('open');
+      btn.textContent = '📈 Ver estadísticas – Últimos 10 juegos';
+      return;
+    }
+
+    // Already loaded before? Just show
+    if (panel.innerHTML.trim()) {
+      panel.classList.add('open');
+      btn.textContent = '▲ Ocultar estadísticas';
+      return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Cargando…';
+
+    const awayPitcher = JSON.parse(btn.dataset.awayPitcher || 'null');
+    const homePitcher = JSON.parse(btn.dataset.homePitcher || 'null');
+
+    // Reconstruct away/home minimal objects for renderPitcherStats
+    const away = { team: { abbreviation: btn.dataset.awayAbr } };
+    const home = { team: { abbreviation: btn.dataset.homeAbr } };
+
+    await loadComparison(panel, away, home, awayPitcher, homePitcher);
+
+    btn.disabled = false;
+    btn.textContent = '▲ Ocultar estadísticas';
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    try { localStorage.setItem('theme', theme); } catch (e) {}
+    const btn = document.getElementById('theme-toggle');
+    if (btn) {
+      if (theme === 'dark') {
+        btn.textContent = '🌙 Modo oscuro';
+      } else {
+        btn.textContent = '☀️ Modo claro';
+      }
+    }
+  }
+
+  (function initThemeToggle(){
+    const btn = document.getElementById('theme-toggle');
+    if (!btn) return;
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    applyTheme(current);
+    btn.addEventListener('click', function(){
+      const now = document.documentElement.getAttribute('data-theme') || 'dark';
+      applyTheme(now === 'dark' ? 'light' : 'dark');
+    });
+  })();
+
+  const urlParams = new URLSearchParams(location.search);
+  const DETAIL_EVENT_ID = urlParams.get('event') || '';
+  const DETAIL_MODE = !!DETAIL_EVENT_ID;
+  let STRONG_ONLY = true;
+
+  function openDetails(btn) {
+    const eventId = btn?.dataset?.eventId;
+    if (!eventId) return;
+    const url = new URL(location.href);
+    url.search = `?event=${encodeURIComponent(eventId)}`;
+    window.open(url.toString(), '_blank');
+  }
+
+  function compareAction(btn) {
+    toggleStats(btn);
+  }
+
+  // ── Fetch & render ────────────────────────────────────────
+  async function fetchMLBGames() {
+    const date = todayStr();
+    document.getElementById('date-label').textContent =
+      new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+    const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates=${date}`;
+
+    try {
+      const res  = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      document.getElementById('status').style.display = 'none';
+
+      let events    = data.events ?? [];
+      if (DETAIL_MODE && DETAIL_EVENT_ID) {
+        events = events.filter(ev => String(ev.id || ev.competitions?.[0]?.id) === String(DETAIL_EVENT_ID));
+      }
+      const container = document.getElementById('games-container');
+
+      if (!events.length) {
+        container.innerHTML = `<div class="no-games"><span class="emoji">😴</span><p>No hay partidos de MLB hoy.</p></div>`;
+      } else {
+        container.innerHTML = events.map(buildCard).join('');
+        if (DETAIL_MODE) {
+          const btn = container.querySelector('.compare-btn');
+          if (btn) {
+            try { compareAction(btn); } catch(e){}
+          }
+        } else {
+          await computeAllPicksSilently();
+        }
+      }
+
+      document.getElementById('raw-box').innerHTML = `
+        <details>
+          <summary>🔍 JSON crudo · ${events.length} partido${events.length!==1?'s':''}</summary>
+          <pre>${JSON.stringify(data,null,2)}</pre>
+        </details>`;
+
+    } catch (err) {
+      try {
+        const r = await fetch(`/api/scoreboard?dates=${date}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const data = await r.json();
+        document.getElementById('status').style.display = 'none';
+        let events    = data.events ?? [];
+        const container = document.getElementById('games-container');
+        if (!events.length) {
+          container.innerHTML = `<div class="no-games"><span class="emoji">😴</span><p>No hay partidos de MLB hoy.</p></div>`;
+        } else {
+          container.innerHTML = events.map(buildCard).join('');
+          await computeAllPicksSilently();
+        }
+      } catch (e2) {
+        document.getElementById('status').innerHTML =
+          `❌ Error: <strong>${e2.message}</strong>`;
+        console.error(e2);
+      }
+    }
+  }
+
+  fetchMLBGames();
+</script>
+
+</body>
+</html>
