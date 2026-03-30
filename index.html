@@ -1073,19 +1073,29 @@
       const scoreB = sb*100 + mb*10 + eb;
       return scoreB - scoreA;
     });
+    const featuredStrong = new Set();
+    const strongPool = [];
+    for (const [cid, it] of entries) {
+      const base = STRONG_ONLY ? it.picks.filter(p=>p.badge==='strong') : it.picks;
+      for (const p of base) {
+        if (p.badge === 'strong') strongPool.push({ cid, text: p.text, score: pickPriorityScore(p) });
+      }
+    }
+    if (strongPool.length) {
+      const bestScore = Math.max(...strongPool.map(x => x.score));
+      for (const item of strongPool) {
+        if (Math.abs(item.score - bestScore) <= 0.0001) {
+          featuredStrong.add(`${item.cid}:::${item.text}`);
+        }
+      }
+    }
     list.innerHTML = entries.map(([cid, it]) => {
       const base = STRONG_ONLY ? it.picks.filter(p=>p.badge==='strong') : it.picks;
       if (!base.length && STRONG_ONLY) return '';
       const tStr = it.evtIso ? fmtTime(it.evtIso) : '';
-      const strongIndices = base.map((p, idx) => ({ p, idx })).filter(x => x.p.badge === 'strong');
-      let featuredStrongIdx = -1;
-      if (strongIndices.length) {
-        strongIndices.sort((a, b) => pickPriorityScore(b.p) - pickPriorityScore(a.p));
-        featuredStrongIdx = strongIndices[0].idx;
-      }
-      const tags = base.map((p, idx) => {
+      const tags = base.map((p) => {
         const star = p.badge === 'strong'
-          ? (idx === featuredStrongIdx ? '<span class="star-premium">✳</span>' : '<span class="star">⭐</span>')
+          ? (featuredStrong.has(`${cid}:::${p.text}`) ? '<span class="star-premium">✳</span>' : '<span class="star">⭐</span>')
           : '';
         const ai   = p.source === 'ai' ? '<span class="ai-badge">IA</span>' : '';
         const r    = (p.source === 'ai' && p.badge === 'strong' && p.reason) ? `<span class="pick-reason">IA: ${esc(p.reason).slice(0,140)}</span>` : '';
@@ -2153,12 +2163,6 @@
         metaParts.push(`<span class="advice-pill">Bate caliente ${awayAbr}: ${offAway.hotHittersPerGame.toFixed(1)} con hit / ${offAway.coldHittersPerGame.toFixed(1)} sin hit · ${homeAbr}: ${offHome.hotHittersPerGame.toFixed(1)} / ${offHome.coldHittersPerGame.toFixed(1)}</span>`);
         const meta = metaParts.join(' ');
         row.innerHTML = (pills.length ? pills.join(' ') : `<span class="advice-badge noplay">Sin apuesta clara</span>`) + ' ' + meta;
-        const strongAdvice = advicePickMeta.filter(p => p.badge === 'strong').sort((a,b) => pickPriorityScore(b) - pickPriorityScore(a));
-        if (strongAdvice.length) {
-          const topKey = strongAdvice[0].key;
-          const topEl = row.querySelector(`[data-pick-key="${topKey.replace(/"/g, '&quot;')}"]`);
-          if (topEl) topEl.insertAdjacentHTML('afterbegin', `<span class="advice-topstar">✳</span>`);
-        }
         box.style.display = 'block';
         const summaryPicks = [];
         if (mlPick) summaryPicks.push({ text: `ML ${mlPick.side}`, badge: mlPick.badge, score: 0.50 + Math.min(strength / 10, 0.2) });
