@@ -94,6 +94,22 @@
       align-items: center;
       gap: 6px;
     }
+    .header-link {
+      position: absolute;
+      top: 0.5rem;
+      left: 1rem;
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
 
     /* ── Loading / Error ── */
     #status { text-align: center; padding: 1.5rem; color: var(--muted); font-size: 0.9rem; }
@@ -362,6 +378,12 @@
     .advice-badge.strong { background: #86efac; }
     .advice-badge.lean   { background: #bfdbfe; }
     .advice-badge.noplay { background: #e5e7eb; }
+    .advice-topstar {
+      color: #22c55e;
+      font-size: 1.05rem;
+      font-weight: 900;
+      margin-right: 4px;
+    }
     .advice-expl {
       color: var(--muted);
       font-size: 0.8rem;
@@ -441,6 +463,11 @@
     .pick-tag .badge.strong { background: #86efac; }
     .pick-tag .badge.lean { background: #bfdbfe; }
     .pick-tag .star { color: #facc15; }
+    .pick-tag .star-premium {
+      color: #22c55e;
+      font-size: 1rem;
+      font-weight: 900;
+    }
     .summary-section.collapsed .picks-list { display: none; }
     .ai-badge {
       background: #fde68a;
@@ -693,18 +720,91 @@
       font-size: 0.7rem; overflow: auto; max-height: 280px;
       color: var(--muted); margin-top: 0.5rem;
     }
+    .glossary-section {
+      max-width: 960px;
+      margin: 0 auto 1rem;
+      border: 1px solid var(--card-border);
+      background: var(--inner-bg);
+      border-radius: 12px;
+      padding: 0.9rem 1rem;
+    }
+    .glossary-title {
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+      text-align: center;
+    }
+    .glossary-intro {
+      color: var(--muted);
+      font-size: 0.82rem;
+      text-align: center;
+      margin-bottom: 0.8rem;
+      line-height: 1.4;
+    }
+    .glossary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .glossary-item {
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 0.7rem 0.8rem;
+      background: var(--pill-bg);
+    }
+    .glossary-item strong {
+      display: block;
+      font-size: 0.82rem;
+      margin-bottom: 0.25rem;
+      color: var(--text);
+    }
+    .glossary-item span {
+      display: block;
+      font-size: 0.76rem;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .site-footer {
+      max-width: 960px;
+      margin: 1rem auto 2rem;
+      padding: 1rem 1.1rem;
+      border: 1px solid var(--card-border);
+      background: var(--inner-bg);
+      border-radius: 12px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .site-footer strong {
+      color: var(--text);
+    }
 
     @media (max-width: 600px) {
       .card-body { grid-template-columns: 1fr; text-align: center; }
       .team.home { flex-direction: row; text-align: left; }
       .pitchers-section { grid-template-columns: 1fr; }
       .compare-grid { grid-template-columns: 1fr; }
+      .glossary-grid { grid-template-columns: 1fr; }
+      .theme-toggle, .header-link {
+        position: static;
+        margin-top: 0.6rem;
+      }
+      header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
     }
   </style>
 </head>
 <body>
 
 <header>
+  <a id="glossary-link" class="header-link" href="?page=glossary">📘 Glosario rápido</a>
   <h1>⚾ MLB – Partidos de Hoy</h1>
   <p id="date-label">Cargando…</p>
   <button id="theme-toggle" class="theme-toggle">🌙 Modo oscuro</button>
@@ -718,8 +818,31 @@
   </div>
   <div id="picks-list" class="picks-list"></div>
 </section>
+<section id="glossary-section" class="glossary-section">
+  <div class="glossary-title">📘 Glosario rápido</div>
+  <div class="glossary-intro">Esta sección explica, en lenguaje simple, qué significa cada sugerencia y cada dato para que cualquier usuario pueda entender la apuesta.</div>
+  <div class="glossary-grid">
+    <div class="glossary-item"><strong>ML</strong><span>Es apostar al ganador del juego. Si dice ML KC, la sugerencia es que Kansas City gane el partido.</span></div>
+    <div class="glossary-item"><strong>Total RUNS Over / Under</strong><span>Es apostar si entre los dos equipos habrá más carreras de las que marca la línea o menos. Ejemplo: Over 9.5 significa 10 o más carreras; Under 9.5 significa 9 o menos.</span></div>
+    <div class="glossary-item"><strong>K Over / Under</strong><span>Es apostar si el pitcher logrará más o menos ponches que lo esperado. Lo medimos con su promedio reciente y la tasa de ponches del rival.</span></div>
+    <div class="glossary-item"><strong>IP Over / Under</strong><span>IP significa innings lanzados. Aquí se estima si el abridor durará más o menos entradas según su forma reciente y qué tan peligrosa es la ofensiva rival.</span></div>
+    <div class="glossary-item"><strong>Fuerte / Medio</strong><span>Fuerte significa que varias señales apuntan a la misma dirección. Medio significa que hay ventaja, pero con menos separación o más riesgo.</span></div>
+    <div class="glossary-item"><strong>Estrella verde ✳</strong><span>Es la apuesta destacada del juego: entre las apuestas fuertes, es la que tiene mejor probabilidad o mejor score interno.</span></div>
+    <div class="glossary-item"><strong>WHIP</strong><span>Mide cuántos corredores permite un pitcher por inning. Más bajo es mejor, porque suele significar menos tráfico en bases.</span></div>
+    <div class="glossary-item"><strong>K/BB</strong><span>Compara ponches contra bases por bolas. Más alto es mejor, porque indica más dominio y menos descontrol.</span></div>
+    <div class="glossary-item"><strong>Split local / visita</strong><span>Compara cómo rinde un pitcher en casa o fuera. Si hoy juega de local, damos más peso a sus números de local.</span></div>
+    <div class="glossary-item"><strong>Split vs L/R</strong><span>Indica cómo batea un equipo contra pitchers zurdos o derechos. También miramos si el abridor poncha mejor a zurdos o a derechos.</span></div>
+    <div class="glossary-item"><strong>Bullpen</strong><span>Son los relevistas que lanzan después del abridor. Un bullpen fuerte ayuda al Under; uno débil puede abrir la puerta al Over.</span></div>
+    <div class="glossary-item"><strong>Bate caliente</strong><span>Mide cuántos bateadores llegan con hits recientes y cuántos no. Si muchos vienen conectando, la ofensiva puede estar en mejor momento.</span></div>
+    <div class="glossary-item"><strong>Probabilidad %</strong><span>Es nuestra estimación interna de qué tan probable es una apuesta. Mientras más alto el porcentaje, más confianza hay en esa dirección.</span></div>
+    <div class="glossary-item"><strong>Movimiento de línea</strong><span>Muestra si la cuota o el total cambiaron desde la apertura. Sirve para saber si el mercado se está moviendo hacia la misma idea o no.</span></div>
+  </div>
+</section>
 <div id="games-container"></div>
 <div id="raw-box"></div>
+<footer class="site-footer">
+  <strong>Diseñado y Creada Por: Ale Cogollo</strong> · Ing Sistemas y Programados - Analista Deportivo con mas de 4 años de Experiencia
+</footer>
 
 <script>
   // ── Helpers ──────────────────────────────────────────────
@@ -924,6 +1047,13 @@
   const picksMap = {};
   const aiPayloadMap = {};
   const gameIdIndex = {};
+  function pickPriorityScore(p) {
+    if (typeof p?.prob === 'number' && Number.isFinite(p.prob)) return p.prob;
+    if (typeof p?.score === 'number' && Number.isFinite(p.score)) return p.score;
+    if (p?.badge === 'strong') return 0.60;
+    if (p?.badge === 'lean') return 0.56;
+    return 0;
+  }
   function renderSummary() {
     const list = document.getElementById('picks-list');
     if (!list) return;
@@ -947,8 +1077,16 @@
       const base = STRONG_ONLY ? it.picks.filter(p=>p.badge==='strong') : it.picks;
       if (!base.length && STRONG_ONLY) return '';
       const tStr = it.evtIso ? fmtTime(it.evtIso) : '';
-      const tags = base.map(p => {
-        const star = p.badge === 'strong' ? '<span class="star">⭐</span>' : '';
+      const strongIndices = base.map((p, idx) => ({ p, idx })).filter(x => x.p.badge === 'strong');
+      let featuredStrongIdx = -1;
+      if (strongIndices.length) {
+        strongIndices.sort((a, b) => pickPriorityScore(b.p) - pickPriorityScore(a.p));
+        featuredStrongIdx = strongIndices[0].idx;
+      }
+      const tags = base.map((p, idx) => {
+        const star = p.badge === 'strong'
+          ? (idx === featuredStrongIdx ? '<span class="star-premium">✳</span>' : '<span class="star">⭐</span>')
+          : '';
         const ai   = p.source === 'ai' ? '<span class="ai-badge">IA</span>' : '';
         const r    = (p.source === 'ai' && p.badge === 'strong' && p.reason) ? `<span class="pick-reason">IA: ${esc(p.reason).slice(0,140)}</span>` : '';
         return `<span class="pick-tag">${p.text} <span class="badge ${p.badge}">${p.badge==='strong'?'Fuerte':'Medio'}</span> ${ai} ${star} ${r}</span>`;
@@ -1562,6 +1700,11 @@
     const y = 1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-z*z);
     return 0.5*(1+sign*y);
   }
+  function parseOddsLine(value) {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : NaN;
+    const match = String(value || '').match(/-?\d+(\.\d+)?/);
+    return match ? parseFloat(match[0]) : NaN;
+  }
 
   // ── Fetch gamelog for a pitcher ──────────────────────────
   async function fetchGamelog(athleteId) {
@@ -1953,6 +2096,7 @@
       const explEl = panelEl.querySelector('#advice-expl');
       if (row && box) {
         const pills = [];
+        const advicePickMeta = [];
         const penScore = (p) => {
           const w = Number(p.whip||0), e = Number(p.era||0), k = Number(p.k9||0);
           if (!(w>0) || !(e>=0)) return NaN;
@@ -1962,18 +2106,39 @@
         const sPenHome = penScore(penHome);
         const bestPen = (!isNaN(sPenAway) && !isNaN(sPenHome)) ? (sPenAway > sPenHome ? 'away' : 'home') : null;
         if (bestPen) pills.push(`<span class="advice-pill">Bullpen mejor: ${bestPen==='home'?homeAbr:awayAbr} ★</span>`);
-        if (mlPick) pills.push(`<span class="advice-pill">ML ${mlPick.side} <span class="advice-badge ${mlPick.badge}">${mlPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
-          if (ouPick && !isNaN(ouLine)) {
+        if (mlPick) {
+          advicePickMeta.push({ key: `ML ${mlPick.side}`, badge: mlPick.badge, score: 0.50 + Math.min(strength / 10, 0.2) });
+          pills.push(`<span class="advice-pill" data-pick-key="ML ${mlPick.side}">ML ${mlPick.side} <span class="advice-badge ${mlPick.badge}">${mlPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        }
+        if (ouPick && !isNaN(ouLine)) {
           const pTot = Number(ouPick.p||0);
             const pct = isNaN(pTot) ? '' : ` · ${Math.round(pTot*100)}%`;
-            pills.push(`<span class="advice-pill">Total RUNS ${ouPick.side} ${ouLine}${pct} <span class="advice-badge ${ouPick.badge}">${ouPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+          const totalKey = `Total RUNS ${ouPick.side} ${ouLine}`;
+          advicePickMeta.push({ key: totalKey, badge: ouPick.badge, prob: Number.isFinite(pTot) ? pTot : undefined });
+          pills.push(`<span class="advice-pill" data-pick-key="${totalKey}">Total RUNS ${ouPick.side} ${ouLine}${pct} <span class="advice-badge ${ouPick.badge}">${ouPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
         }
         if (!isNaN(moveMlAway) || !isNaN(moveMlHome)) pills.push(`<span class="advice-pill">Movimiento ML ${awayAbr}: ${isNaN(moveMlAway)?'–':moveMlAway} · ${homeAbr}: ${isNaN(moveMlHome)?'–':moveMlHome}</span>`);
         if (!isNaN(moveOu)) pills.push(`<span class="advice-pill">Movimiento Total: ${moveOu}</span>`);
-        if (kPickAway) pills.push(`<span class="advice-pill">${kPickAway.which} ${kPickAway.side} <span class="advice-badge ${kPickAway.badge}">${kPickAway.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
-        if (kPickHome) pills.push(`<span class="advice-pill">${kPickHome.which} ${kPickHome.side} <span class="advice-badge ${kPickHome.badge}">${kPickHome.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
-        if (ipPickAway) pills.push(`<span class="advice-pill">${ipPickAway.which} ${ipPickAway.side} <span class="advice-badge ${ipPickAway.badge}">${ipPickAway.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
-        if (ipPickHome) pills.push(`<span class="advice-pill">${ipPickHome.which} ${ipPickHome.side} <span class="advice-badge ${ipPickHome.badge}">${ipPickHome.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        if (kPickAway) {
+          const key = `${kPickAway.which} ${kPickAway.side}`;
+          advicePickMeta.push({ key, badge: kPickAway.badge, score: 0.56 + ((awayContext.avgK + (awayContext.kSplitAdj||0)) / 100) });
+          pills.push(`<span class="advice-pill" data-pick-key="${key}">${kPickAway.which} ${kPickAway.side} <span class="advice-badge ${kPickAway.badge}">${kPickAway.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        }
+        if (kPickHome) {
+          const key = `${kPickHome.which} ${kPickHome.side}`;
+          advicePickMeta.push({ key, badge: kPickHome.badge, score: 0.56 + ((homeContext.avgK + (homeContext.kSplitAdj||0)) / 100) });
+          pills.push(`<span class="advice-pill" data-pick-key="${key}">${kPickHome.which} ${kPickHome.side} <span class="advice-badge ${kPickHome.badge}">${kPickHome.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        }
+        if (ipPickAway) {
+          const key = `${ipPickAway.which} ${ipPickAway.side}`;
+          advicePickMeta.push({ key, badge: ipPickAway.badge, score: 0.56 + ((awayContext.avgIP || A.avgIP) / 100) });
+          pills.push(`<span class="advice-pill" data-pick-key="${key}">${ipPickAway.which} ${ipPickAway.side} <span class="advice-badge ${ipPickAway.badge}">${ipPickAway.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        }
+        if (ipPickHome) {
+          const key = `${ipPickHome.which} ${ipPickHome.side}`;
+          advicePickMeta.push({ key, badge: ipPickHome.badge, score: 0.56 + ((homeContext.avgIP || H.avgIP) / 100) });
+          pills.push(`<span class="advice-pill" data-pick-key="${key}">${ipPickHome.which} ${ipPickHome.side} <span class="advice-badge ${ipPickHome.badge}">${ipPickHome.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        }
         const metaParts = [
           `<span class="advice-pill">Edge ${better==='home'?homeAbr:awayAbr}: ${strength.toFixed(2)}</span>`,
           `<span class="advice-pill">WHIP ${awayAbr}: ${awayContext.whip.toFixed(2)} · ${homeAbr}: ${homeContext.whip.toFixed(2)}</span>`,
@@ -1988,14 +2153,20 @@
         metaParts.push(`<span class="advice-pill">Bate caliente ${awayAbr}: ${offAway.hotHittersPerGame.toFixed(1)} con hit / ${offAway.coldHittersPerGame.toFixed(1)} sin hit · ${homeAbr}: ${offHome.hotHittersPerGame.toFixed(1)} / ${offHome.coldHittersPerGame.toFixed(1)}</span>`);
         const meta = metaParts.join(' ');
         row.innerHTML = (pills.length ? pills.join(' ') : `<span class="advice-badge noplay">Sin apuesta clara</span>`) + ' ' + meta;
+        const strongAdvice = advicePickMeta.filter(p => p.badge === 'strong').sort((a,b) => pickPriorityScore(b) - pickPriorityScore(a));
+        if (strongAdvice.length) {
+          const topKey = strongAdvice[0].key;
+          const topEl = row.querySelector(`[data-pick-key="${topKey.replace(/"/g, '&quot;')}"]`);
+          if (topEl) topEl.insertAdjacentHTML('afterbegin', `<span class="advice-topstar">✳</span>`);
+        }
         box.style.display = 'block';
         const summaryPicks = [];
-        if (mlPick) summaryPicks.push({ text: `ML ${mlPick.side}`, badge: mlPick.badge });
-        if (ouPick && !isNaN(ouLine)) summaryPicks.push({ text: `${ouPick.side} ${ouLine}`, badge: ouPick.badge });
-        if (kPickAway) summaryPicks.push({ text: `${kPickAway.which} ${kPickAway.side}`, badge: kPickAway.badge });
-        if (kPickHome) summaryPicks.push({ text: `${kPickHome.which} ${kPickHome.side}`, badge: kPickHome.badge });
-        if (ipPickAway) summaryPicks.push({ text: `${ipPickAway.which} ${ipPickAway.side}`, badge: ipPickAway.badge });
-        if (ipPickHome) summaryPicks.push({ text: `${ipPickHome.which} ${ipPickHome.side}`, badge: ipPickHome.badge });
+        if (mlPick) summaryPicks.push({ text: `ML ${mlPick.side}`, badge: mlPick.badge, score: 0.50 + Math.min(strength / 10, 0.2) });
+        if (ouPick && !isNaN(ouLine)) summaryPicks.push({ text: `Total RUNS ${ouPick.side} ${ouLine}`, badge: ouPick.badge, prob: Number.isFinite(Number(ouPick.p)) ? Number(ouPick.p) : undefined });
+        if (kPickAway) summaryPicks.push({ text: `${kPickAway.which} ${kPickAway.side}`, badge: kPickAway.badge, score: 0.56 + ((awayContext.avgK + (awayContext.kSplitAdj||0)) / 100) });
+        if (kPickHome) summaryPicks.push({ text: `${kPickHome.which} ${kPickHome.side}`, badge: kPickHome.badge, score: 0.56 + ((homeContext.avgK + (homeContext.kSplitAdj||0)) / 100) });
+        if (ipPickAway) summaryPicks.push({ text: `${ipPickAway.which} ${ipPickAway.side}`, badge: ipPickAway.badge, score: 0.56 + ((awayContext.avgIP || A.avgIP) / 100) });
+        if (ipPickHome) summaryPicks.push({ text: `${ipPickHome.which} ${ipPickHome.side}`, badge: ipPickHome.badge, score: 0.56 + ((homeContext.avgIP || H.avgIP) / 100) });
         if (summaryPicks.length) updateSummary(cardKey, awayAbr, homeAbr, summaryPicks, strength);
         if (explEl) {
           const parts = [];
@@ -2118,10 +2289,10 @@
     const odds0 = comp?.odds?.[0];
     const mlAway = odds0?.moneyline?.away?.close?.odds ?? odds0?.moneyline?.away?.open?.odds ?? '';
     const mlHome = odds0?.moneyline?.home?.close?.odds ?? odds0?.moneyline?.home?.open?.odds ?? '';
-    const ouLine = odds0?.total?.over?.close?.line ?? odds0?.total?.over?.open?.line ?? '';
+    const ouLine = parseOddsLine(odds0?.total?.over?.close?.line ?? odds0?.total?.over?.open?.line ?? '');
     const mlAwayOpen = odds0?.moneyline?.away?.open?.odds ?? '';
     const mlHomeOpen = odds0?.moneyline?.home?.open?.odds ?? '';
-    const ouOpen = odds0?.total?.over?.open?.line ?? '';
+    const ouOpen = parseOddsLine(odds0?.total?.over?.open?.line ?? '');
 
     return `
     <div class="game-card" id="${cardId}">
@@ -2277,8 +2448,35 @@
 
   const urlParams = new URLSearchParams(location.search);
   const DETAIL_EVENT_ID = urlParams.get('event') || '';
+  const GLOSSARY_MODE = urlParams.get('page') === 'glossary';
   const DETAIL_MODE = !!DETAIL_EVENT_ID;
   let STRONG_ONLY = true;
+
+  function initPageMode() {
+    const glossaryLink = document.getElementById('glossary-link');
+    const glossarySection = document.getElementById('glossary-section');
+    const summarySection = document.getElementById('summary-section');
+    const status = document.getElementById('status');
+    const games = document.getElementById('games-container');
+    const raw = document.getElementById('raw-box');
+    const title = document.querySelector('header h1');
+    const dateLabel = document.getElementById('date-label');
+    if (GLOSSARY_MODE) {
+      if (glossaryLink) {
+        glossaryLink.href = './';
+        glossaryLink.textContent = '⬅ Volver a partidos';
+      }
+      if (title) title.textContent = '📘 Glosario rápido';
+      if (dateLabel) dateLabel.textContent = 'Explicación simple de métricas, señales y sugerencias de apuesta.';
+      if (summarySection) summarySection.style.display = 'none';
+      if (status) status.style.display = 'none';
+      if (games) games.style.display = 'none';
+      if (raw) raw.style.display = 'none';
+      if (glossarySection) glossarySection.style.display = 'block';
+      return;
+    }
+    if (glossarySection) glossarySection.style.display = 'none';
+  }
 
   function openDetails(btn) {
     const eventId = btn?.dataset?.eventId;
@@ -2355,7 +2553,8 @@
     }
   }
 
-  fetchMLBGames();
+  initPageMode();
+  if (!GLOSSARY_MODE) fetchMLBGames();
 </script>
 
 </body>
