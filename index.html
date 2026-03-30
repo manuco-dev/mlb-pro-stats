@@ -782,6 +782,40 @@
     .site-footer strong {
       color: var(--text);
     }
+    .site-footer-name {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 0.2rem;
+    }
+    .site-footer-role {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+    .site-footer-sports {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 0.55rem;
+    }
+    .site-footer-sports span {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--card-border);
+      background: var(--pill-bg);
+      color: var(--text);
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+    .site-footer-copy {
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
 
     @media (max-width: 600px) {
       .card-body { grid-template-columns: 1fr; text-align: center; }
@@ -841,7 +875,14 @@
 <div id="games-container"></div>
 <div id="raw-box"></div>
 <footer class="site-footer">
-  <strong>Diseñado y Creada Por: Ale Cogollo</strong> · Ing Sistemas y Programados - Analista Deportivo con mas de 4 años de Experiencia
+  <div class="site-footer-name">Diseñado y creado por Alex Cogollo</div>
+  <div class="site-footer-role">Ingeniero de Sistemas · Analista deportivo con más de 4 años de experiencia</div>
+  <div class="site-footer-sports">
+    <span>⚾ MLB</span>
+    <span>🏀 NBA</span>
+    <span>⚽ Fútbol</span>
+  </div>
+  <div class="site-footer-copy">Análisis y visualización de datos deportivos con enfoque profesional.</div>
 </footer>
 
 <script>
