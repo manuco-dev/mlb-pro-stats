@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Glosario rápido MLB</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --card-bg: #111827;
+      --card-border: rgba(148,163,184,0.18);
+      --pill-bg: #0f172a;
+      --inner-bg: #0f172a;
+    }
+    body.light {
+      --bg: #f8fafc;
+      --text: #0f172a;
+      --muted: #64748b;
+      --card-bg: #ffffff;
+      --card-border: rgba(15,23,42,0.10);
+      --pill-bg: #f8fafc;
+      --inner-bg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 2.5rem 1rem;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      max-width: 960px;
+      margin: 0 auto 1.4rem;
+      text-align: center;
+      position: relative;
+    }
+    .header-link, .theme-toggle {
+      position: absolute;
+      top: 0.5rem;
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .header-link { left: 0; }
+    .theme-toggle { right: 0; }
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin: 0;
+      background: linear-gradient(135deg, #e63946 0%, #f4a261 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p {
+      color: var(--muted);
+      margin-top: 0.5rem;
+      font-size: 0.92rem;
+    }
+    .glossary-section, .site-footer {
+      max-width: 960px;
+      margin: 0 auto 1rem;
+      border: 1px solid var(--card-border);
+      background: var(--inner-bg);
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+    }
+    .glossary-title {
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.7rem;
+      text-align: center;
+    }
+    .glossary-intro {
+      color: var(--muted);
+      font-size: 0.84rem;
+      text-align: center;
+      margin-bottom: 1rem;
+      line-height: 1.45;
+    }
+    .glossary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .glossary-item {
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 0.8rem 0.9rem;
+      background: var(--pill-bg);
+    }
+    .glossary-item strong {
+      display: block;
+      font-size: 0.84rem;
+      margin-bottom: 0.3rem;
+      color: var(--text);
+    }
+    .glossary-item span {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+    .site-footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .site-footer-name {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 0.2rem;
+    }
+    .site-footer-role {
+      margin-bottom: 0.6rem;
+    }
+    .site-footer-sports {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 0.55rem;
+    }
+    .site-footer-sports span {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--card-border);
+      background: var(--pill-bg);
+      color: var(--text);
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+    @media (max-width: 700px) {
+      .glossary-grid { grid-template-columns: 1fr; }
+      .header-link, .theme-toggle {
+        position: static;
+        margin-top: 0.6rem;
+      }
+      header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="header-link" href="./">⬅ Volver a partidos</a>
+    <h1>📘 Glosario rápido</h1>
+    <p>Explicación simple de métricas, señales y sugerencias de apuesta.</p>
+    <button id="theme-toggle" class="theme-toggle">🌙 Modo oscuro</button>
+  </header>
+
+  <section class="glossary-section">
+    <div class="glossary-title">📘 Glosario rápido</div>
+    <div class="glossary-intro">Aquí puedes ver el significado básico de cada apuesta y de cada dato, explicado de forma sencilla.</div>
+    <div class="glossary-grid">
+      <div class="glossary-item"><strong>ML</strong><span>Es apostar al ganador del juego. Si dice ML KC, la sugerencia es que Kansas City gane el partido.</span></div>
+      <div class="glossary-item"><strong>Total RUNS Over / Under</strong><span>Es apostar si entre los dos equipos habrá más carreras de las que marca la línea o menos. Ejemplo: Over 9.5 significa 10 o más carreras; Under 9.5 significa 9 o menos.</span></div>
+      <div class="glossary-item"><strong>K Over / Under</strong><span>Es apostar si el pitcher hará más o menos ponches.</span></div>
+      <div class="glossary-item"><strong>IP Over / Under</strong><span>IP significa innings lanzados. Aquí se apuesta si el abridor durará más o menos entradas.</span></div>
+      <div class="glossary-item"><strong>Fuerte / Medio</strong><span>Fuerte indica más confianza. Medio indica una jugada buena, pero con un poco más de riesgo.</span></div>
+      <div class="glossary-item"><strong>Estrella verde ✳</strong><span>Marca la apuesta destacada del juego.</span></div>
+      <div class="glossary-item"><strong>WHIP</strong><span>Indica cuántos corredores permite un pitcher por inning. Más bajo normalmente es mejor.</span></div>
+      <div class="glossary-item"><strong>K/BB</strong><span>Compara ponches y bases por bolas. Más alto suele ser mejor.</span></div>
+      <div class="glossary-item"><strong>Split local / visita</strong><span>Muestra si un pitcher o equipo rinde mejor en casa o como visitante.</span></div>
+      <div class="glossary-item"><strong>Split vs L/R</strong><span>Indica el rendimiento contra zurdos o derechos.</span></div>
+      <div class="glossary-item"><strong>Bullpen</strong><span>Son los pitchers relevistas que entran después del abridor.</span></div>
+      <div class="glossary-item"><strong>Bate caliente</strong><span>Se usa para describir a bateadores o equipos que vienen conectando bien en sus juegos recientes.</span></div>
+      <div class="glossary-item"><strong>Probabilidad %</strong><span>Es el porcentaje de confianza que se muestra para una apuesta.</span></div>
+      <div class="glossary-item"><strong>Movimiento de línea</strong><span>Es el cambio que ha tenido la línea o la cuota antes del partido.</span></div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="site-footer-name">Diseñado y creado por Alex Cogollo</div>
+    <div class="site-footer-role">Ingeniero de Sistemas · Analista deportivo con más de 4 años de experiencia</div>
+    <div class="site-footer-sports">
+      <span>⚾ MLB</span>
+      <span>🏀 NBA</span>
+      <span>⚽ Fútbol</span>
+    </div>
+    <div>Análisis y visualización de datos deportivos con enfoque profesional.</div>
+  </footer>
+
+  <script>
+    const themeToggle = document.getElementById('theme-toggle');
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') document.body.classList.add('light');
+    if (themeToggle) {
+      const paint = () => {
+        themeToggle.textContent = document.body.classList.contains('light') ? '☀️ Modo claro' : '🌙 Modo oscuro';
+      };
+      paint();
+      themeToggle.addEventListener('click', () => {
+        document.body.classList.toggle('light');
+        localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+        paint();
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "mlb-stats",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node dev-server.js"
+  },
+  "dependencies": {
+    "mongodb": "^6.17.0"
+  }
+}

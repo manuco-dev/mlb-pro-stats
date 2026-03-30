@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard de picks MLB</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --card-bg: #111827;
+      --card-border: rgba(148,163,184,0.18);
+      --pill-bg: #0f172a;
+      --inner-bg: #0f172a;
+    }
+    body.light {
+      --bg: #f8fafc;
+      --text: #0f172a;
+      --muted: #64748b;
+      --card-bg: #ffffff;
+      --card-border: rgba(15,23,42,0.10);
+      --pill-bg: #f8fafc;
+      --inner-bg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 2.5rem 1rem;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      max-width: 960px;
+      margin: 0 auto 1.4rem;
+      text-align: center;
+      position: relative;
+    }
+    .header-actions {
+      position: absolute;
+      top: 0.5rem;
+      left: 0;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .header-link, .theme-toggle {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .theme-toggle {
+      position: absolute;
+      top: 0.5rem;
+      right: 0;
+    }
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin: 0;
+      background: linear-gradient(135deg, #e63946 0%, #f4a261 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p {
+      color: var(--muted);
+      margin-top: 0.5rem;
+      font-size: 0.92rem;
+    }
+    .dashboard-section, .site-footer {
+      max-width: 960px;
+      margin: 0 auto 1rem;
+      border: 1px solid var(--card-border);
+      background: var(--inner-bg);
+      border-radius: 12px;
+      padding: 0.95rem 1rem;
+    }
+    .dashboard-title {
+      font-size: 0.82rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+      text-align: center;
+    }
+    .dashboard-intro {
+      color: var(--muted);
+      font-size: 0.82rem;
+      text-align: center;
+      margin-bottom: 0.9rem;
+      line-height: 1.45;
+    }
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--card-border);
+      border-top-color: #e63946;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .dashboard-grid,
+    .market-grid,
+    .split-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 0.9rem;
+    }
+    .dashboard-card,
+    .market-card {
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      background: var(--pill-bg);
+      padding: 0.9rem;
+    }
+    .dashboard-card .label,
+    .market-card .label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.35rem;
+      font-weight: 800;
+    }
+    .dashboard-card .value,
+    .market-card .value {
+      font-size: 1.45rem;
+      font-weight: 900;
+      color: var(--text);
+      line-height: 1;
+    }
+    .dashboard-card .meta,
+    .market-card .meta {
+      margin-top: 0.45rem;
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+    .dashboard-subtitle {
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 1rem 0 0.65rem;
+    }
+    .result-badge,
+    .pick-result {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 0.74rem;
+      font-weight: 800;
+    }
+    .pick-result.win { background: rgba(34,197,94,0.16); color: #22c55e; border-color: rgba(34,197,94,0.28); }
+    .pick-result.loss { background: rgba(239,68,68,0.16); color: #ef4444; border-color: rgba(239,68,68,0.28); }
+    .pick-result.push { background: rgba(245,158,11,0.16); color: #f59e0b; border-color: rgba(245,158,11,0.28); }
+    .pick-result.ungraded { background: rgba(148,163,184,0.16); color: #94a3b8; border-color: rgba(148,163,184,0.28); }
+    .dashboard-empty {
+      border: 1px dashed var(--card-border);
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+    .dashboard-table-wrap {
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow: auto;
+      background: var(--inner-bg);
+    }
+    .dashboard-table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 980px;
+    }
+    .dashboard-table th,
+    .dashboard-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--card-border);
+      text-align: left;
+      font-size: 0.78rem;
+      vertical-align: top;
+    }
+    .dashboard-table th {
+      position: sticky;
+      top: 0;
+      background: var(--pill-bg);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.68rem;
+      font-weight: 900;
+      z-index: 1;
+    }
+    .dashboard-table tbody tr:hover {
+      background: rgba(88,166,255,0.06);
+    }
+    .table-game { font-weight: 800; color: var(--text); }
+    .table-date { min-width: 150px; color: var(--muted); }
+    .table-actual { color: var(--muted); }
+    .table-source { text-transform: uppercase; font-size: 0.7rem; color: var(--muted); font-weight: 800; }
+    .site-footer {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.45;
+    }
+    .site-footer-name {
+      font-size: 0.95rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 0.2rem;
+    }
+    .site-footer-role { margin-bottom: 0.6rem; }
+    .site-footer-sports {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 0.55rem;
+    }
+    .site-footer-sports span {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--card-border);
+      background: var(--pill-bg);
+      color: var(--text);
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+    @media (max-width: 700px) {
+      .dashboard-grid,
+      .market-grid,
+      .split-grid { grid-template-columns: 1fr; }
+      .header-actions, .theme-toggle {
+        position: static;
+        margin-top: 0.6rem;
+      }
+      .header-actions {
+        justify-content: center;
+      }
+      header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-actions">
+      <a class="header-link" href="./">⬅ Volver a partidos</a>
+      <a class="header-link" href="./glossary.html">📘 Glosario rápido</a>
+    </div>
+    <h1>📊 Dashboard de picks</h1>
+    <p>Historial de apuestas sugeridas, rendimiento por mercado y resultados agrupados por fecha.</p>
+    <button id="theme-toggle" class="theme-toggle">🌙 Modo oscuro</button>
+  </header>
+
+  <section class="dashboard-section">
+    <div class="dashboard-title">📊 Dashboard de resultados</div>
+    <div id="dashboard-content" class="dashboard-intro">Cargando estadísticas de picks…</div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="site-footer-name">Diseñado y creado por Alex Cogollo</div>
+    <div class="site-footer-role">Ingeniero de Sistemas · Analista deportivo con más de 4 años de experiencia</div>
+    <div class="site-footer-sports">
+      <span>⚾ MLB</span>
+      <span>🏀 NBA</span>
+      <span>⚽ Fútbol</span>
+    </div>
+    <div>Análisis y visualización de datos deportivos con enfoque profesional.</div>
+  </footer>
+
+  <script>
+    function esc(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function formatDateKey(dateKey) {
+      const raw = String(dateKey || '').replace(/\D/g, '');
+      if (raw.length !== 8) return String(dateKey || 'Sin fecha');
+      const y = Number(raw.slice(0, 4));
+      const m = Number(raw.slice(4, 6));
+      const d = Number(raw.slice(6, 8));
+      const dt = new Date(y, m - 1, d);
+      if (Number.isNaN(dt.getTime())) return String(dateKey || 'Sin fecha');
+      return dt.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    }
+    async function fetchAppJson(url, options) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const trimmed = text.trim();
+      if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
+        throw new Error('La API local no está activa. Ejecuta el proyecto con "npm run dev" para habilitar /api.');
+      }
+      try {
+        return JSON.parse(text);
+      } catch (_) {
+        throw new Error('La API devolvió una respuesta no válida. Ejecuta el proyecto con "npm run dev".');
+      }
+    }
+    function renderDashboard(data) {
+      const mount = document.getElementById('dashboard-content');
+      if (!mount) return;
+      const summary = data?.summary || {};
+      const byMarket = data?.byMarket || {};
+      const history = Array.isArray(data?.history) ? data.history : [];
+      const overallCards = [
+        { label: 'Picks evaluados', value: Number(summary.graded || 0), meta: `Total registrados: ${Number(summary.picks || 0)}` },
+        { label: 'Ganadas', value: Number(summary.wins || 0), meta: `Perdidas: ${Number(summary.losses || 0)} · Push: ${Number(summary.pushes || 0)}` },
+        { label: 'Efectividad', value: summary.accuracy == null ? 'N/D' : `${Math.round(Number(summary.accuracy) * 100)}%`, meta: `Juegos cerrados: ${Number(summary.games || 0)}` },
+        { label: 'Pendientes', value: Number(data?.pending || 0), meta: `Sin liquidar: ${Number(summary.ungraded || 0)}` }
+      ];
+      const marketCards = Object.entries(byMarket)
+        .sort((a, b) => Number(b[1]?.wins || 0) - Number(a[1]?.wins || 0))
+        .map(([market, stats]) => `
+          <div class="market-card">
+            <div class="label">${esc(market)}</div>
+            <div class="value">${stats?.accuracy == null ? 'N/D' : `${Math.round(Number(stats.accuracy) * 100)}%`}</div>
+            <div class="meta">W ${Number(stats?.wins || 0)} · L ${Number(stats?.losses || 0)} · P ${Number(stats?.pushes || 0)} · U ${Number(stats?.ungraded || 0)}</div>
+          </div>
+        `).join('');
+      const splitMap = {};
+      for (const game of history) {
+        for (const result of (game?.results || [])) {
+          const key = result?.market === 'ML' ? 'ML' : `${String(result?.market || 'OTROS')} ${String(result?.side || '').trim()}`.trim();
+          if (!splitMap[key]) splitMap[key] = { wins: 0, losses: 0, pushes: 0, ungraded: 0, graded: 0 };
+          if (result?.result === 'win') { splitMap[key].wins += 1; splitMap[key].graded += 1; }
+          else if (result?.result === 'loss') { splitMap[key].losses += 1; splitMap[key].graded += 1; }
+          else if (result?.result === 'push') { splitMap[key].pushes += 1; splitMap[key].graded += 1; }
+          else splitMap[key].ungraded += 1;
+        }
+      }
+      const splitCards = Object.entries(splitMap)
+        .sort((a, b) => (b[1].wins + b[1].graded) - (a[1].wins + a[1].graded))
+        .map(([label, stats]) => {
+          const accuracy = stats.graded ? Math.round((stats.wins / stats.graded) * 100) : null;
+          return `
+            <div class="market-card">
+              <div class="label">${esc(label)}</div>
+              <div class="value">${accuracy == null ? 'N/D' : `${accuracy}%`}</div>
+              <div class="meta">W ${stats.wins} · L ${stats.losses} · Push ${stats.pushes} · Sin cerrar ${stats.ungraded}</div>
+            </div>
+          `;
+        }).join('');
+      const tableRows = history.flatMap(item => {
+        const dateLabel = formatDateKey(item?.dateKey || '');
+        const gameLabel = `${String(item?.awayAbr || '')} @ ${String(item?.homeAbr || '')}`;
+        const summaryRow = item?.resultSummary || {};
+        return (item?.results || []).map(result => {
+          const state = String(result?.result || 'ungraded');
+          const statusLabel = state === 'win' ? 'Ganada' : state === 'loss' ? 'Perdida' : state === 'push' ? 'Push' : 'Pendiente';
+          const line = Number.isFinite(Number(result?.line)) ? Number(result.line) : '';
+          return `
+            <tr>
+              <td class="table-date">${esc(dateLabel)}</td>
+              <td><div class="table-game">${esc(gameLabel)}</div><div class="table-actual">Ganador: ${esc(summaryRow?.winnerAbr || 'Pendiente')}</div></td>
+              <td>${esc(result?.text || '')}</td>
+              <td>${esc(result?.market || '')}</td>
+              <td>${esc(result?.side || '')}</td>
+              <td>${line === '' ? '—' : esc(line)}</td>
+              <td><span class="pick-result ${state}">${statusLabel}</span></td>
+              <td class="table-actual">${result?.actualDisplay ? esc(result.actualDisplay) : '—'}</td>
+              <td class="table-source">${esc(result?.source || 'model')}</td>
+            </tr>
+          `;
+        });
+      }).join('');
+      mount.innerHTML = `
+        <div class="dashboard-intro">Aquí ves el rendimiento histórico de las sugerencias guardadas en base de datos, separadas por fecha y por tipo de mercado.</div>
+        <div class="dashboard-grid">${overallCards.map(card => `<div class="dashboard-card"><div class="label">${esc(card.label)}</div><div class="value">${esc(card.value)}</div><div class="meta">${esc(card.meta)}</div></div>`).join('')}</div>
+        <div class="dashboard-subtitle">Rendimiento por mercado</div>
+        <div class="market-grid">${marketCards || '<div class="dashboard-empty">Todavía no hay mercados liquidados.</div>'}</div>
+        <div class="dashboard-subtitle">Detalle por tipo de jugada</div>
+        <div class="split-grid">${splitCards || '<div class="dashboard-empty">Aún no hay suficientes resultados para mostrar este detalle.</div>'}</div>
+        <div class="dashboard-subtitle">Tabla de picks guardados</div>
+        <div class="dashboard-table-wrap">${tableRows ? `
+          <table class="dashboard-table">
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Juego</th>
+                <th>Pick</th>
+                <th>Mercado</th>
+                <th>Lado</th>
+                <th>Línea</th>
+                <th>Estado</th>
+                <th>Real</th>
+                <th>Fuente</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        ` : '<div class="dashboard-empty">Aún no hay picks guardados para mostrar.</div>'}</div>
+      `;
+    }
+    async function loadDashboard() {
+      const mount = document.getElementById('dashboard-content');
+      if (!mount) return;
+      mount.innerHTML = '<span class="spinner"></span> Cargando dashboard de picks…';
+      try {
+        const data = await fetchAppJson('/api/picks-stats');
+        if (!data?.ok) throw new Error(data?.error || 'No se pudo cargar el dashboard');
+        renderDashboard(data);
+      } catch (error) {
+        mount.innerHTML = `<div class="dashboard-empty">No se pudo cargar el dashboard: ${esc(error.message || 'error')}</div>`;
+      }
+    }
+    const themeToggle = document.getElementById('theme-toggle');
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') document.body.classList.add('light');
+    if (themeToggle) {
+      const paint = () => {
+        themeToggle.textContent = document.body.classList.contains('light') ? '☀️ Modo claro' : '🌙 Modo oscuro';
+      };
+      paint();
+      themeToggle.addEventListener('click', () => {
+        document.body.classList.toggle('light');
+        localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+        paint();
+      });
+    }
+    loadDashboard();
+  </script>
+</body>
+</html>
