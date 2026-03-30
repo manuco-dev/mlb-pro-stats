@@ -770,6 +770,61 @@
     return 1.0;
   }
 
+  async function fetchPitcherSplitsSeason(athleteId, season) {
+    const urls = [
+      `https://site.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${athleteId}/splits?season=${season}&category=pitching`,
+      `https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes/${athleteId}/splits?season=${season}&category=pitching`
+    ];
+    for (const url of urls) {
+      try {
+        const r = await fetch(url);
+        if (!r.ok) continue;
+        const data = await r.json();
+        const cats = data?.splits?.categories || data?.categories || [];
+        const findBlock = (label) => cats.find(c => new RegExp(label,'i').test(c.name || c.displayName || ''));
+        const pitching = findBlock('pitching') || cats[0] || {};
+        const rows = pitching?.stats || [];
+        const get = (rows, name) => {
+          const s = rows.find(x => x.name === name || x.shortDisplayName === name || x.displayName === name);
+          return s?.value ?? s?.displayValue ?? null;
+        };
+        const toNum = (v) => {
+          const n = Number(v);
+          return Number.isFinite(n) ? n : null;
+        };
+        const vsLeft = cats.find(c => /vs.*left/i.test(c.name || c.displayName || '')) || null;
+        const vsRight = cats.find(c => /vs.*right/i.test(c.name || c.displayName || '')) || null;
+        const stat = (block, key1, key2) => {
+          const rows = block?.stats || [];
+          const v1 = toNum(get(rows, key1));
+          if (v1 != null) return v1;
+          const v2 = toNum(get(rows, key2));
+          return v2;
+        };
+        let k9L = stat(vsLeft, 'strikeoutsPerNineInnings', 'K/9');
+        let k9R = stat(vsRight, 'strikeoutsPerNineInnings', 'K/9');
+        if (k9L == null || k9R == null) {
+          const kL = stat(vsLeft, 'strikeouts', 'K');
+          const ipL = stat(vsLeft, 'fullInnings.partInnings', 'IP');
+          const kR = stat(vsRight, 'strikeouts', 'K');
+          const ipR = stat(vsRight, 'fullInnings.partInnings', 'IP');
+          if (k9L == null && kL != null && ipL != null && ipL > 0) k9L = (kL * 9) / ipL;
+          if (k9R == null && kR != null && ipR != null && ipR > 0) k9R = (kR * 9) / ipR;
+        }
+        return { k9VsL: k9L ?? 0, k9VsR: k9R ?? 0 };
+      } catch (_) {}
+    }
+    return { k9VsL: 0, k9VsR: 0 };
+  }
+
+  async function fetchPitcherSplits(athleteId, seasons) {
+    const results = await Promise.allSettled(seasons.map(season => fetchPitcherSplitsSeason(athleteId, season)));
+    const rows = results.filter(r=>r.status==='fulfilled').map(r=>r.value);
+    if (!rows.length) return { k9VsL: 0, k9VsR: 0 };
+    const avg = (key) => rows.reduce((a,r)=>a + Number(r[key]||0),0) / rows.length;
+    return { k9VsL: avg('k9VsL'), k9VsR: avg('k9VsR') };
+  }
+
   async function fetchTeamSeasonRPG(teamId, season) {
     const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/${teamId}/schedule?season=${season}`;
     const res = await fetch(url);
@@ -1642,6 +1697,10 @@
       awayId ? fetchPitcherMultiSeasonGames(awayId, ANALYSIS_SEASONS) : Promise.reject(new Error('Sin ID')),
       homeId ? fetchPitcherMultiSeasonGames(homeId, ANALYSIS_SEASONS) : Promise.reject(new Error('Sin ID'))
     ]);
+    const [awaySplitRes, homeSplitRes] = await Promise.allSettled([
+      awayId ? fetchPitcherSplits(awayId, ANALYSIS_SEASONS) : Promise.reject(new Error('Sin ID')),
+      homeId ? fetchPitcherSplits(homeId, ANALYSIS_SEASONS) : Promise.reject(new Error('Sin ID'))
+    ]);
 
     const colAway = panelEl.querySelector('#col-away');
     const colHome = panelEl.querySelector('#col-home');
@@ -1716,21 +1775,28 @@
           splitAway
         };
       };
-      const contextualPitcherScore = (stats, focus) => {
+      const contextualPitcherScore = (stats, focus, split) => {
         const preferred = focus === 'home' ? stats.splitHome : stats.splitAway;
         const other = focus === 'home' ? stats.splitAway : stats.splitHome;
         const splitWeight = preferred.n >= 6 ? 0.65 : preferred.n >= 3 ? 0.45 : preferred.n >= 1 ? 0.25 : 0;
         const avgIP = (stats.avgIP * (1 - splitWeight)) + (preferred.avgIP * splitWeight);
         const avgK = (stats.avgK * (1 - splitWeight)) + (preferred.avgK * splitWeight);
         const whip = (stats.whip * (1 - splitWeight)) + (preferred.whip * splitWeight);
+        const kSplitAdj = (() => {
+          const k9L = Number(split?.k9VsL||0), k9R = Number(split?.k9VsR||0);
+          const diff = (k9L + k9R) ? ((Math.max(k9L,k9R) - Math.min(k9L,k9R)) / 9) : 0;
+          return diff * 0.6;
+        })();
         const splitEdge = preferred.n ? ((preferred.avgIP - other.avgIP) * 0.55) + ((preferred.avgK - other.avgK) * 0.18) - ((preferred.whip - other.whip) * 1.2) : 0;
-        const score = (avgIP * 0.55) + (avgK * 0.12) + (stats.kbb * 0.65) - (whip * 1.7) + splitEdge;
-        return { score, splitWeight, preferred, other, splitEdge, focus, avgIP, avgK, whip };
+        const score = (avgIP * 0.55) + ((avgK + kSplitAdj) * 0.12) + (stats.kbb * 0.65) - (whip * 1.7) + splitEdge;
+        return { score, splitWeight, preferred, other, splitEdge, focus, avgIP, avgK, whip, kSplitAdj };
       };
       const A = summarize(gAway);
       const H = summarize(gHome);
-      const awayContext = contextualPitcherScore(A, 'away');
-      const homeContext = contextualPitcherScore(H, 'home');
+      const awaySplit = awaySplitRes.status==='fulfilled' ? awaySplitRes.value : {k9VsL:0,k9VsR:0};
+      const homeSplit = homeSplitRes.status==='fulfilled' ? homeSplitRes.value : {k9VsL:0,k9VsR:0};
+      const awayContext = contextualPitcherScore(A, 'away', awaySplit);
+      const homeContext = contextualPitcherScore(H, 'home', homeSplit);
       const sAway = awayContext.score;
       const sHome = homeContext.score;
       const edge = sHome - sAway;
@@ -1849,17 +1915,21 @@
       const kPickAway = (() => {
         if (!awayId) return null;
         const oppKRate = isHomeLHP ? Number(offHome.kRateVsL||offHome.kRate||0) : Number(offHome.kRateVsR||offHome.kRate||0);
-        if (awayContext.avgK >= 6.8 && oppKRate >= 0.26) return {which:`K ${awayLast}`, side:'Over', badge: awayContext.preferred.n >= 3 ? 'strong' : 'lean'};
-        if (awayContext.avgK >= 6.0 && oppKRate >= 0.24) return {which:`K ${awayLast}`, side:'Over', badge:'lean'};
-        if (awayContext.avgK <= 5.0 && oppKRate <= 0.22) return {which:`K ${awayLast}`, side:'Under', badge:'lean'};
+        const splitBoost = Math.max(awaySplit.k9VsL, awaySplit.k9VsR) >= 10 ? 0.3 : 0;
+        const kAvg = awayContext.avgK + splitBoost;
+        if (kAvg >= 6.8 && oppKRate >= 0.26) return {which:`K ${awayLast}`, side:'Over', badge: awayContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (kAvg >= 6.0 && oppKRate >= 0.24) return {which:`K ${awayLast}`, side:'Over', badge:'lean'};
+        if (kAvg <= 5.0 && oppKRate <= 0.22) return {which:`K ${awayLast}`, side:'Under', badge:'lean'};
         return null;
       })();
       const kPickHome = (() => {
         if (!homeId) return null;
         const oppKRate = isAwayLHP ? Number(offAway.kRateVsL||offAway.kRate||0) : Number(offAway.kRateVsR||offAway.kRate||0);
-        if (homeContext.avgK >= 6.8 && oppKRate >= 0.26) return {which:`K ${homeLast}`, side:'Over', badge: homeContext.preferred.n >= 3 ? 'strong' : 'lean'};
-        if (homeContext.avgK >= 6.0 && oppKRate >= 0.24) return {which:`K ${homeLast}`, side:'Over', badge:'lean'};
-        if (homeContext.avgK <= 5.0 && oppKRate <= 0.22) return {which:`K ${homeLast}`, side:'Under', badge:'lean'};
+        const splitBoost = Math.max(homeSplit.k9VsL, homeSplit.k9VsR) >= 10 ? 0.3 : 0;
+        const kAvg = homeContext.avgK + splitBoost;
+        if (kAvg >= 6.8 && oppKRate >= 0.26) return {which:`K ${homeLast}`, side:'Over', badge: homeContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (kAvg >= 6.0 && oppKRate >= 0.24) return {which:`K ${homeLast}`, side:'Over', badge:'lean'};
+        if (kAvg <= 5.0 && oppKRate <= 0.22) return {which:`K ${homeLast}`, side:'Under', badge:'lean'};
         return null;
       })();
       const ipPickAway = (() => {
@@ -1958,11 +2028,11 @@
             const kp = [];
             if (kPickAway) {
               const oppRate = isHomeLHP ? (offHome.kRateVsL||offHome.kRate||0) : (offHome.kRateVsR||offHome.kRate||0);
-              kp.push(`${kPickAway.which} ${kPickAway.side} (K visita ${awayContext.avgK.toFixed(1)} · kRate ${homeAbr} ${(oppRate*100).toFixed(0)}%)`);
+              kp.push(`${kPickAway.which} ${kPickAway.side} (K visita ${(awayContext.avgK + (awayContext.kSplitAdj||0)).toFixed(1)} · kRate ${homeAbr} ${(oppRate*100).toFixed(0)}%)`);
             }
             if (kPickHome) {
               const oppRate = isAwayLHP ? (offAway.kRateVsL||offAway.kRate||0) : (offAway.kRateVsR||offAway.kRate||0);
-              kp.push(`${kPickHome.which} ${kPickHome.side} (K casa ${homeContext.avgK.toFixed(1)} · kRate ${awayAbr} ${(oppRate*100).toFixed(0)}%)`);
+              kp.push(`${kPickHome.which} ${kPickHome.side} (K casa ${(homeContext.avgK + (homeContext.kSplitAdj||0)).toFixed(1)} · kRate ${awayAbr} ${(oppRate*100).toFixed(0)}%)`);
             }
             parts.push(kp.join(' · '));
           }
