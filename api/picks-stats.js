@@ -209,36 +209,44 @@ export default async function handler(req) {
     const collection = db.collection('picks');
     const docs = await collection.find({ settled: { $ne: true } }).toArray();
     let updated = 0;
+    const settleErrors = [];
     for (const doc of docs) {
-      const summary = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${doc.gameId}`);
-      const state = summary?.header?.competitions?.[0]?.status?.type?.state || '';
-      if (state !== 'post') continue;
-      const competitors = summary?.header?.competitions?.[0]?.competitors || [];
-      const away = competitors.find(c => c.homeAway === 'away') || {};
-      const home = competitors.find(c => c.homeAway === 'home') || {};
-      const awayScore = Number(away?.score || 0);
-      const homeScore = Number(home?.score || 0);
-      const winnerAbr = awayScore > homeScore ? away?.team?.abbreviation : home?.team?.abbreviation;
-      const starterMap = buildStarterMap(summary);
-      const finalData = { totalRuns: awayScore + homeScore, winnerAbr: String(winnerAbr || '') };
-      const results = (doc.picks || []).map(pick => ({
-        ...evaluatePick(pick, finalData, starterMap),
-        badge: String(pick?.badge || 'lean'),
-        source: String(pick?.source || 'model')
-      }));
-      const resultSummary = summarizeResults(results);
-      await collection.updateOne(
-        { _id: doc._id },
-        {
-          $set: {
-            settled: true,
-            settledAt: new Date().toISOString(),
-            resultSummary: { ...resultSummary, totalRuns: finalData.totalRuns, winnerAbr: finalData.winnerAbr },
-            results
+      try {
+        const summary = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${doc.gameId}`);
+        const state = summary?.header?.competitions?.[0]?.status?.type?.state || '';
+        if (state !== 'post') continue;
+        const competitors = summary?.header?.competitions?.[0]?.competitors || [];
+        const away = competitors.find(c => c.homeAway === 'away') || {};
+        const home = competitors.find(c => c.homeAway === 'home') || {};
+        const awayScore = Number(away?.score || 0);
+        const homeScore = Number(home?.score || 0);
+        const winnerAbr = awayScore > homeScore ? away?.team?.abbreviation : home?.team?.abbreviation;
+        const starterMap = buildStarterMap(summary);
+        const finalData = { totalRuns: awayScore + homeScore, winnerAbr: String(winnerAbr || '') };
+        const results = (doc.picks || []).map(pick => ({
+          ...evaluatePick(pick, finalData, starterMap),
+          badge: String(pick?.badge || 'lean'),
+          source: String(pick?.source || 'model')
+        }));
+        const resultSummary = summarizeResults(results);
+        await collection.updateOne(
+          { _id: doc._id },
+          {
+            $set: {
+              settled: true,
+              settledAt: new Date().toISOString(),
+              resultSummary: { ...resultSummary, totalRuns: finalData.totalRuns, winnerAbr: finalData.winnerAbr },
+              results
+            }
           }
-        }
-      );
-      updated += 1;
+        );
+        updated += 1;
+      } catch (error) {
+        settleErrors.push({
+          gameId: String(doc?.gameId || ''),
+          message: String(error?.message || 'settle-error')
+        });
+      }
     }
     const pending = await collection.countDocuments({ settled: { $ne: true } });
     const allDocs = await collection.find({}).sort({ dateKey: -1, updatedAt: -1, settledAt: -1 }).toArray();
@@ -315,6 +323,7 @@ export default async function handler(req) {
       ok: true,
       updated,
       pending,
+      settleErrors,
       summary,
       byMarket: finalizeBucket(byMarket),
       bySource: finalizeBucket(bySource),

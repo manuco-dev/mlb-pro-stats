@@ -103,6 +103,33 @@
       margin-bottom: 0.9rem;
       line-height: 1.45;
     }
+    .dashboard-toolbar {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 0.9rem;
+    }
+    .dashboard-btn {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .dashboard-note {
+      margin: 0.25rem 0 0.9rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.45;
+    }
+    .dashboard-note.warn {
+      color: #f59e0b;
+    }
     .spinner {
       display: inline-block;
       width: 18px;
@@ -285,6 +312,9 @@
 
   <section class="dashboard-section">
     <div class="dashboard-title">📊 Dashboard de resultados</div>
+    <div class="dashboard-toolbar">
+      <button id="refresh-dashboard" class="dashboard-btn">Actualizar dashboard</button>
+    </div>
     <div id="dashboard-content" class="dashboard-intro">Cargando estadísticas de picks…</div>
   </section>
 
@@ -333,6 +363,10 @@
       const summary = data?.summary || {};
       const byMarket = data?.byMarket || {};
       const history = Array.isArray(data?.history) ? data.history : [];
+      const settleErrors = Array.isArray(data?.settleErrors) ? data.settleErrors : [];
+      const noteHtml = settleErrors.length
+        ? `<div class="dashboard-note warn">Algunos juegos no se pudieron liquidar en este intento (${settleErrors.length}). El dashboard seguirá reintentando automáticamente.</div>`
+        : `<div class="dashboard-note">Los picks pendientes se reevalúan cada vez que abres o actualizas este dashboard. Cuando un partido termina, la sugerencia ganada se marca en verde.</div>`;
       const overallCards = [
         { label: 'Picks evaluados', value: Number(summary.graded || 0), meta: `Total registrados: ${Number(summary.picks || 0)}` },
         { label: 'Ganadas', value: Number(summary.wins || 0), meta: `Perdidas: ${Number(summary.losses || 0)} · Push: ${Number(summary.pushes || 0)}` },
@@ -396,6 +430,7 @@
       }).join('');
       mount.innerHTML = `
         <div class="dashboard-intro">Aquí ves el rendimiento histórico de las sugerencias guardadas en base de datos, separadas por fecha y por tipo de mercado.</div>
+        ${noteHtml}
         <div class="dashboard-grid">${overallCards.map(card => `<div class="dashboard-card"><div class="label">${esc(card.label)}</div><div class="value">${esc(card.value)}</div><div class="meta">${esc(card.meta)}</div></div>`).join('')}</div>
         <div class="dashboard-subtitle">Rendimiento por mercado</div>
         <div class="market-grid">${marketCards || '<div class="dashboard-empty">Todavía no hay mercados liquidados.</div>'}</div>
@@ -434,6 +469,10 @@
         mount.innerHTML = `<div class="dashboard-empty">No se pudo cargar el dashboard: ${esc(error.message || 'error')}</div>`;
       }
     }
+    const refreshButton = document.getElementById('refresh-dashboard');
+    if (refreshButton) {
+      refreshButton.addEventListener('click', () => loadDashboard());
+    }
     const themeToggle = document.getElementById('theme-toggle');
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'light') document.body.classList.add('light');
@@ -449,6 +488,9 @@
       });
     }
     loadDashboard();
+    setInterval(() => {
+      loadDashboard();
+    }, 60000);
   </script>
 </body>
 </html>
