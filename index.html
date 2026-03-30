@@ -1373,6 +1373,8 @@
       let runs = 0, ks = 0, hits = 0;
       let hotHitters = 0, coldHitters = 0, activeHitters = 0;
       let hand = '';
+      let pa = 0;
+      const iso = ev.date || comp?.date || '';
       try {
         const sum = await fetchGameSummary(eid);
         const t = (sum.boxscore?.teams || []).find(t => t.team?.id == teamId);
@@ -1380,6 +1382,7 @@
         runs = parseFloat((bats.find(s => s.name === 'runs')?.value) || 0);
         ks = parseFloat((bats.find(s => s.name === 'strikeouts')?.value) || 0);
         hits = parseFloat((bats.find(s => s.name === 'hits')?.value) || 0);
+        pa = parseFloat((bats.find(s => s.name === 'plateAppearances')?.value) || 0);
         const battingBlock = findTeamBattingBlock(sum, teamId);
         const athletes = battingBlock?.athletes || [];
         for (const athlete of athletes) {
@@ -1397,13 +1400,20 @@
           else if (/RHP/i.test(String(throws))) hand = 'RHP';
         }
       } catch (_) {}
-      return { runs, ks, hits, homeAway, hotHitters, coldHitters, activeHitters, hand };
+      return { runs, ks, hits, pa, homeAway, hotHitters, coldHitters, activeHitters, hand, iso };
     }));
     const rows = results.filter(r => r.status === 'fulfilled').map(r => r.value);
     const n = rows.length || 1;
     const sumR = rows.reduce((a,r)=>a+r.runs,0);
     const sumK = rows.reduce((a,r)=>a+r.ks,0);
     const sumH = rows.reduce((a,r)=>a+r.hits,0);
+    const currentY = new Date().getFullYear();
+    const w = (r) => {
+      const y = r.iso ? new Date(r.iso).getFullYear() : currentY-1;
+      return y === currentY ? 1.4 : 1.0;
+    };
+    const sumKW = rows.reduce((a,r)=>a + r.ks * w(r),0);
+    const sumPAW = rows.reduce((a,r)=>a + (r.pa||0) * w(r),0);
     const sumHot = rows.reduce((a,r)=>a+r.hotHitters,0);
     const sumCold = rows.reduce((a,r)=>a+r.coldHitters,0);
     const sumActive = rows.reduce((a,r)=>a+r.activeHitters,0);
@@ -1412,6 +1422,11 @@
     const rVsL = rows.filter(r=>r.hand==='LHP');
     const rVsR = rows.filter(r=>r.hand==='RHP');
     const avg = (arr, key) => arr.length ? arr.reduce((a,x)=>a+x[key],0)/arr.length : 0;
+    const wr = (arr) => {
+      const kw = arr.reduce((a,r)=>a + r.ks * w(r),0);
+      const paw = arr.reduce((a,r)=>a + (r.pa||0) * w(r),0);
+      return paw > 0 ? kw / paw : 0;
+    };
     const recentThree = rows.slice(0, 3);
     const recentFive = rows.slice(0, 5);
     const hotRate = sumActive ? (sumHot / sumActive) : 0;
@@ -1419,6 +1434,9 @@
     const recentThreeHits = recentThree.length ? avg(recentThree, 'hits') : 0;
     const recentFiveHits = recentFive.length ? avg(recentFive, 'hits') : 0;
     const hotScore = (avg(rows, 'hits') * 0.55) + (hotRate * 10 * 0.35) + ((recentThreeHits - recentFiveHits) * 0.6);
+    const kRate = sumPAW > 0 ? (sumKW / sumPAW) : 0;
+    const kRateVsL = wr(rVsL);
+    const kRateVsR = wr(rVsR);
     return {
       rpg: sumR/n,
       kpg: sumK/n,
@@ -1435,6 +1453,9 @@
       kpgVsR: avg(rVsR,'ks'),
       hpgVsL: avg(rVsL,'hits'),
       hpgVsR: avg(rVsR,'hits'),
+      kRate,
+      kRateVsL,
+      kRateVsR,
       hotHittersPerGame: sumHot/n,
       coldHittersPerGame: sumCold/n,
       hotRate,
@@ -1477,6 +1498,14 @@
     if (!ipStr) return 0;
     const parts = String(ipStr).split('.');
     return parseFloat(parts[0]) + (parseFloat(parts[1]||0) / 3);
+  }
+  function normCdf(x) {
+    const a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;
+    const sign = x<0?-1:1;
+    const z = Math.abs(x)/Math.SQRT2;
+    const t = 1/(1+p*z);
+    const y = 1-((((a5*t+a4)*t+a3)*t+a2)*t+a1)*t*Math.exp(-z*z);
+    return 0.5*(1+sign*y);
   }
 
   // ── Fetch gamelog for a pitcher ──────────────────────────
@@ -1711,6 +1740,8 @@
       const mlAway = btn ? parseFloat(btn.dataset.mlAway || '') : NaN;
       const mlHome = btn ? parseFloat(btn.dataset.mlHome || '') : NaN;
       const ouLine = btn ? parseFloat(btn.dataset.ouLine || '') : NaN;
+      const ouOverOdds = btn ? parseFloat(btn.dataset.ouOverOdds || '') : NaN;
+      const ouUnderOdds = btn ? parseFloat(btn.dataset.ouUnderOdds || '') : NaN;
       const awayTeamId = btn?.dataset.awayTeamId;
       const homeTeamId = btn?.dataset.homeTeamId;
       const tempF = btn?.dataset.temp ? parseFloat(btn.dataset.temp) : NaN;
@@ -1783,10 +1814,23 @@
         if (penAway.era >= 4.60 || penHome.era >= 4.60) overUnderSignal += 0.25;
       }
       let ouPick = null;
-      if (overUnderSignal >= 7.2) ouPick = {side: 'Over', badge:'strong'};
-      else if (overUnderSignal >= 6.2) ouPick = {side: 'Over', badge:'lean'};
-      else if (overUnderSignal <= 4.8) ouPick = {side: 'Under', badge:'strong'};
-      else if (overUnderSignal <= 5.6) ouPick = {side: 'Under', badge:'lean'};
+      const mu = overUnderSignal;
+      const kDisp = 12;
+      const sigma = Math.sqrt(Math.max(mu*(1+mu/kDisp), 1e-6));
+      const z = isNaN(ouLine) ? NaN : ((ouLine + 0.5) - mu) / sigma;
+      const pOver = isNaN(z) ? NaN : (1 - normCdf(z));
+      const pUnder = isNaN(pOver) ? NaN : (1 - pOver);
+      if (!isNaN(pOver)) {
+        if (pOver >= 0.61) ouPick = {side:'Over', badge:'strong', p: pOver};
+        else if (pOver >= 0.56) ouPick = {side:'Over', badge:'lean', p: pOver};
+        else if (pUnder >= 0.61) ouPick = {side:'Under', badge:'strong', p: pUnder};
+        else if (pUnder >= 0.56) ouPick = {side:'Under', badge:'lean', p: pUnder};
+      }
+      if (!ouPick && !isNaN(ouLine)) {
+        const side = mu >= ouLine ? 'Over' : 'Under';
+        const p = side === 'Over' ? pOver : pUnder;
+        ouPick = { side, badge: 'lean', p: isNaN(p) ? undefined : p };
+      }
       const mlPick = (() => {
         if (strength < 0.6) return null;
         const side = better === 'home' ? homeAbr : awayAbr;
@@ -1804,14 +1848,18 @@
       const oppVsHandHomePitch = isHomeLHP ? Number(offAway.rpgVsL||NaN) : Number(offAway.rpgVsR||NaN);
       const kPickAway = (() => {
         if (!awayId) return null;
-        if (awayContext.avgK >= 6.5 && offHome.kpg >= 9) return {which:`K ${awayLast}`, side:'Over', badge: awayContext.preferred.n >= 3 ? 'strong' : 'lean'};
-        if (awayContext.avgK <= 5.0 && offHome.kpg <= 7.4) return {which:`K ${awayLast}`, side:'Under', badge:'lean'};
+        const oppKRate = isHomeLHP ? Number(offHome.kRateVsL||offHome.kRate||0) : Number(offHome.kRateVsR||offHome.kRate||0);
+        if (awayContext.avgK >= 6.8 && oppKRate >= 0.26) return {which:`K ${awayLast}`, side:'Over', badge: awayContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (awayContext.avgK >= 6.0 && oppKRate >= 0.24) return {which:`K ${awayLast}`, side:'Over', badge:'lean'};
+        if (awayContext.avgK <= 5.0 && oppKRate <= 0.22) return {which:`K ${awayLast}`, side:'Under', badge:'lean'};
         return null;
       })();
       const kPickHome = (() => {
         if (!homeId) return null;
-        if (homeContext.avgK >= 6.5 && offAway.kpg >= 9) return {which:`K ${homeLast}`, side:'Over', badge: homeContext.preferred.n >= 3 ? 'strong' : 'lean'};
-        if (homeContext.avgK <= 5.0 && offAway.kpg <= 7.4) return {which:`K ${homeLast}`, side:'Under', badge:'lean'};
+        const oppKRate = isAwayLHP ? Number(offAway.kRateVsL||offAway.kRate||0) : Number(offAway.kRateVsR||offAway.kRate||0);
+        if (homeContext.avgK >= 6.8 && oppKRate >= 0.26) return {which:`K ${homeLast}`, side:'Over', badge: homeContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (homeContext.avgK >= 6.0 && oppKRate >= 0.24) return {which:`K ${homeLast}`, side:'Over', badge:'lean'};
+        if (homeContext.avgK <= 5.0 && oppKRate <= 0.22) return {which:`K ${homeLast}`, side:'Under', badge:'lean'};
         return null;
       })();
       const ipPickAway = (() => {
@@ -1845,7 +1893,11 @@
         const bestPen = (!isNaN(sPenAway) && !isNaN(sPenHome)) ? (sPenAway > sPenHome ? 'away' : 'home') : null;
         if (bestPen) pills.push(`<span class="advice-pill">Bullpen mejor: ${bestPen==='home'?homeAbr:awayAbr} ★</span>`);
         if (mlPick) pills.push(`<span class="advice-pill">ML ${mlPick.side} <span class="advice-badge ${mlPick.badge}">${mlPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
-        if (ouPick && !isNaN(ouLine)) pills.push(`<span class="advice-pill">${ouPick.side} ${ouLine} <span class="advice-badge ${ouPick.badge}">${ouPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+          if (ouPick && !isNaN(ouLine)) {
+          const pTot = Number(ouPick.p||0);
+            const pct = isNaN(pTot) ? '' : ` · ${Math.round(pTot*100)}%`;
+            pills.push(`<span class="advice-pill">Total RUNS ${ouPick.side} ${ouLine}${pct} <span class="advice-badge ${ouPick.badge}">${ouPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
+        }
         if (!isNaN(moveMlAway) || !isNaN(moveMlHome)) pills.push(`<span class="advice-pill">Movimiento ML ${awayAbr}: ${isNaN(moveMlAway)?'–':moveMlAway} · ${homeAbr}: ${isNaN(moveMlHome)?'–':moveMlHome}</span>`);
         if (!isNaN(moveOu)) pills.push(`<span class="advice-pill">Movimiento Total: ${moveOu}</span>`);
         if (kPickAway) pills.push(`<span class="advice-pill">${kPickAway.which} ${kPickAway.side} <span class="advice-badge ${kPickAway.badge}">${kPickAway.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
@@ -1882,7 +1934,9 @@
           }
           if (ouPick && !isNaN(ouLine)) {
             const wx = (!isIndoor && !isNaN(tempF)) ? `, clima ${tempF}°F` : '';
-            parts.push(`Total ${ouPick.side} ${ouLine}: señal = ${overUnderSignal.toFixed(1)} (pitchers ${(A.avgR + H.avgR).toFixed(1)} + ofensivas 25+26 ${(offAway.seasonRpg + offHome.seasonRpg).toFixed(1)} + hits recientes ${(offAway.hpg + offHome.hpg).toFixed(1)}${wx}).`);
+            const pTot = Number(ouPick.p||NaN);
+            const pctStr = isNaN(pTot) ? '' : ` ${Math.round(pTot*100)}% ·`;
+            parts.push(`Total RUNS ${ouPick.side} ${ouLine}:${pctStr} señal = ${overUnderSignal.toFixed(1)} (pitchers ${(A.avgR + H.avgR).toFixed(1)} + ofensivas 25+26 ${(offAway.seasonRpg + offHome.seasonRpg).toFixed(1)} + hits recientes ${(offAway.hpg + offHome.hpg).toFixed(1)}${wx}).`);
           }
           if (!isNaN(pAway) && !isNaN(pHome)) {
             parts.push(`Prob. implícita ML: ${awayAbr} ${(pAway*100).toFixed(0)}% · ${homeAbr} ${(pHome*100).toFixed(0)}%.`);
@@ -1902,8 +1956,14 @@
           parts.push(`Bate caliente reciente: ${awayAbr} ${offAway.hotHittersPerGame.toFixed(1)} con hit y ${offAway.coldHittersPerGame.toFixed(1)} sin hit por juego; ${homeAbr} ${offHome.hotHittersPerGame.toFixed(1)} y ${offHome.coldHittersPerGame.toFixed(1)}.`);
           if (kPickAway || kPickHome) {
             const kp = [];
-            if (kPickAway) kp.push(`${kPickAway.which} ${kPickAway.side} (K ajustado visita ${awayContext.avgK.toFixed(1)} vs K/G ${homeAbr} ${offHome.kpg.toFixed(1)})`);
-            if (kPickHome) kp.push(`${kPickHome.which} ${kPickHome.side} (K ajustado casa ${homeContext.avgK.toFixed(1)} vs K/G ${awayAbr} ${offAway.kpg.toFixed(1)})`);
+            if (kPickAway) {
+              const oppRate = isHomeLHP ? (offHome.kRateVsL||offHome.kRate||0) : (offHome.kRateVsR||offHome.kRate||0);
+              kp.push(`${kPickAway.which} ${kPickAway.side} (K visita ${awayContext.avgK.toFixed(1)} · kRate ${homeAbr} ${(oppRate*100).toFixed(0)}%)`);
+            }
+            if (kPickHome) {
+              const oppRate = isAwayLHP ? (offAway.kRateVsL||offAway.kRate||0) : (offAway.kRateVsR||offAway.kRate||0);
+              kp.push(`${kPickHome.which} ${kPickHome.side} (K casa ${homeContext.avgK.toFixed(1)} · kRate ${awayAbr} ${(oppRate*100).toFixed(0)}%)`);
+            }
             parts.push(kp.join(' · '));
           }
           if (ipPickAway || ipPickHome) {
@@ -2059,6 +2119,8 @@
                 data-ml-away="${mlAway}"
                 data-ml-home="${mlHome}"
                 data-ou-line="${ouLine}"
+                data-ou-over-odds="${odds0?.total?.over?.close?.odds ?? odds0?.total?.over?.open?.odds ?? ''}"
+                data-ou-under-odds="${odds0?.total?.under?.close?.odds ?? odds0?.total?.under?.open?.odds ?? ''}"
                 data-ml-away-open="${mlAwayOpen}"
                 data-ml-home-open="${mlHomeOpen}"
                 data-ou-open="${ouOpen}"
