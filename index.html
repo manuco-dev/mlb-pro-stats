@@ -1098,7 +1098,7 @@
 <section id="summary-section" class="summary-section">
   <div class="summary-title">🎯 Resumen de apuestas por juego</div>
   <div class="pick-tags" style="justify-content:center; margin-bottom:8px; display:flex; gap:8px;">
-    <button id="best-open" class="pick-tag"><span class="star">⭐</span> Mejores apuestas</button>
+    <button id="best-open" class="pick-tag">Todas las apuestas</button>
     <button class="pick-tag summary-filter is-active" data-market-filter="ALL">Todas</button>
     <button class="pick-tag summary-filter" data-market-filter="ML">ML</button>
     <button class="pick-tag summary-filter" data-market-filter="IP">IP</button>
@@ -1387,6 +1387,9 @@
     if (filter === 'OU') return market === 'TOTAL' || isTotalRunsPick(p);
     return market === filter;
   }
+  function bestButtonLabel() {
+    return STRONG_ONLY ? 'Todas las apuestas' : '⭐ Mejores apuestas';
+  }
   function renderSummary() {
     const list = document.getElementById('picks-list');
     if (!list) return;
@@ -1554,9 +1557,10 @@
     }
     const bestBtn = document.getElementById('best-open');
     if (bestBtn) {
+      bestBtn.textContent = bestButtonLabel();
       bestBtn.addEventListener('click', function(){
         STRONG_ONLY = !STRONG_ONLY;
-        bestBtn.innerHTML = STRONG_ONLY ? '<span class="star">⭐</span> Mejores apuestas' : 'Todas las apuestas';
+        bestBtn.textContent = bestButtonLabel();
         renderSummary();
       });
     }
