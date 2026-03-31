@@ -6,6 +6,30 @@ async function fetchJson(url) {
   return r.json();
 }
 
+function isNodeResponse(res) {
+  return !!res && typeof res.setHeader === 'function' && typeof res.end === 'function';
+}
+
+function jsonResponse(res, status, payload) {
+  if (isNodeResponse(res)) {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(payload));
+    return;
+  }
+  return new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+function textResponse(res, status, text) {
+  if (isNodeResponse(res)) {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end(text);
+    return;
+  }
+  return new Response(text, { status });
+}
+
 function parseLine(value) {
   const match = String(value ?? '').match(/-?\d+(\.\d+)?/);
   return match ? Number(match[0]) : null;
@@ -232,10 +256,10 @@ async function settlePendingDoc(collection, doc) {
   return { updated: true };
 }
 
-export default async function handler(req) {
+export default async function handler(req, res) {
   try {
     if (req.method !== 'POST' && req.method !== 'GET') {
-      return new Response('Method Not Allowed', { status: 405 });
+      return textResponse(res, 405, 'Method Not Allowed');
     }
     const db = await getDb();
     const collection = db.collection('picks');
@@ -329,7 +353,7 @@ export default async function handler(req) {
       }
     }
     summary.accuracy = summary.graded ? Number((summary.wins / summary.graded).toFixed(3)) : null;
-    return new Response(JSON.stringify({
+    return jsonResponse(res, 200, {
       ok: true,
       updated,
       pending,
@@ -339,8 +363,8 @@ export default async function handler(req) {
       bySource: finalizeBucket(bySource),
       recent: recent.slice(0, 15),
       history: history.slice(0, 240)
-    }), { headers: { 'Content-Type': 'application/json' } });
+    });
   } catch (error) {
-    return new Response(JSON.stringify({ ok: false, error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return jsonResponse(res, 500, { ok: false, error: error.message });
   }
 }

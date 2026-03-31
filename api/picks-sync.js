@@ -1,5 +1,45 @@
 import { getDb } from './_mongo.js';
 
+function isNodeResponse(res) {
+  return !!res && typeof res.setHeader === 'function' && typeof res.end === 'function';
+}
+
+function jsonResponse(res, status, payload) {
+  if (isNodeResponse(res)) {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(payload));
+    return;
+  }
+  return new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+function textResponse(res, status, text) {
+  if (isNodeResponse(res)) {
+    res.statusCode = status;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.end(text);
+    return;
+  }
+  return new Response(text, { status });
+}
+
+async function readJsonBody(req) {
+  if (typeof req?.json === 'function') return req.json();
+  return await new Promise((resolve, reject) => {
+    let raw = '';
+    req.on('data', chunk => { raw += String(chunk); });
+    req.on('end', () => {
+      try {
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
 function parseLine(value) {
   const match = String(value ?? '').match(/-?\d+(\.\d+)?/);
   return match ? Number(match[0]) : null;
@@ -65,12 +105,12 @@ function normalizePick(pick) {
 export default async function handler(req, res) {
   try {
     if (req.method !== 'POST') {
-      return new Response('Method Not Allowed', { status: 405 });
+      return textResponse(res, 405, 'Method Not Allowed');
     }
-    const body = await req.json();
+    const body = await readJsonBody(req);
     const rows = Array.isArray(body?.games) ? body.games : [];
     if (!rows.length) {
-      return new Response(JSON.stringify({ ok: true, upserts: 0 }), { headers: { 'Content-Type': 'application/json' } });
+      return jsonResponse(res, 200, { ok: true, upserts: 0 });
     }
     const db = await getDb();
     const collection = db.collection('picks');
@@ -104,8 +144,8 @@ export default async function handler(req, res) {
       );
       upserts += 1;
     }
-    return new Response(JSON.stringify({ ok: true, upserts }), { headers: { 'Content-Type': 'application/json' } });
+    return jsonResponse(res, 200, { ok: true, upserts });
   } catch (error) {
-    return new Response(JSON.stringify({ ok: false, error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return jsonResponse(res, 500, { ok: false, error: error.message });
   }
 }
