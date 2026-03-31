@@ -277,7 +277,6 @@
     .table-game { font-weight: 800; color: var(--text); }
     .table-date { min-width: 150px; color: var(--muted); }
     .table-actual { color: var(--muted); }
-    .table-source { text-transform: uppercase; font-size: 0.7rem; color: var(--muted); font-weight: 800; }
     .site-footer {
       text-align: center;
       color: var(--muted);
@@ -540,7 +539,6 @@
               <td>${line === '' ? '—' : esc(line)}</td>
               <td><span class="pick-result ${state}">${statusLabel}</span></td>
               <td class="table-actual">${result?.actualDisplay ? esc(result.actualDisplay) : '—'}</td>
-              <td class="table-source">${esc(result?.source || 'model')}</td>
             </tr>
           `;
         });
@@ -566,7 +564,6 @@
                 <th>Línea</th>
                 <th>Estado</th>
                 <th>Real</th>
-                <th>Fuente</th>
               </tr>
             </thead>
             <tbody>${tableRows}</tbody>
