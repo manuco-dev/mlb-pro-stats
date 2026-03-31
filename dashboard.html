@@ -110,6 +110,26 @@
       flex-wrap: wrap;
       margin-bottom: 0.9rem;
     }
+    .dashboard-filters {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 0.9rem;
+    }
+    .dashboard-filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 190px;
+    }
+    .dashboard-filter-group label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 800;
+    }
     .dashboard-btn {
       background: var(--card-bg);
       color: var(--text);
@@ -119,6 +139,16 @@
       font-size: 0.8rem;
       font-weight: 700;
       cursor: pointer;
+    }
+    .dashboard-select,
+    .dashboard-date {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 0.84rem;
+      width: 100%;
     }
     .dashboard-note {
       margin: 0.25rem 0 0.9rem;
@@ -315,6 +345,26 @@
     <div class="dashboard-toolbar">
       <button id="refresh-dashboard" class="dashboard-btn">Actualizar dashboard</button>
     </div>
+    <div class="dashboard-filters">
+      <div class="dashboard-filter-group">
+        <label for="market-filter">Categoría</label>
+        <select id="market-filter" class="dashboard-select">
+          <option value="ALL">Todas</option>
+          <option value="ML">ML</option>
+          <option value="TOTAL">O/U</option>
+          <option value="K">K</option>
+          <option value="IP">IP</option>
+        </select>
+      </div>
+      <div class="dashboard-filter-group">
+        <label for="date-filter">Fecha</label>
+        <input id="date-filter" class="dashboard-date" type="date" />
+      </div>
+      <div class="dashboard-filter-group" style="justify-content:flex-end;">
+        <label>&nbsp;</label>
+        <button id="clear-filters" class="dashboard-btn">Limpiar filtros</button>
+      </div>
+    </div>
     <div id="dashboard-content" class="dashboard-intro">Cargando estadísticas de picks…</div>
   </section>
 
@@ -357,28 +407,95 @@
         throw new Error('La API devolvió una respuesta no válida. Ejecuta el proyecto con "npm run dev".');
       }
     }
+    function dateKeyToInputValue(dateKey) {
+      const raw = String(dateKey || '').replace(/\D/g, '');
+      if (raw.length !== 8) return '';
+      return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+    }
+    function inputValueToDateKey(value) {
+      const raw = String(value || '').replace(/\D/g, '');
+      return raw.length === 8 ? raw : '';
+    }
+    const dashboardFilters = {
+      market: 'ALL',
+      dateKey: ''
+    };
+    function applyDashboardFilters(history) {
+      return (Array.isArray(history) ? history : [])
+        .map(item => {
+          const filteredResults = (Array.isArray(item?.results) ? item.results : []).filter(result => {
+            if (dashboardFilters.market !== 'ALL' && String(result?.market || '').toUpperCase() !== dashboardFilters.market) {
+              return false;
+            }
+            return true;
+          });
+          if (dashboardFilters.dateKey && String(item?.dateKey || '') !== dashboardFilters.dateKey) {
+            return null;
+          }
+          if (!filteredResults.length) return null;
+          const filteredSummary = {
+            ...item?.resultSummary,
+            picks: filteredResults.length,
+            graded: filteredResults.filter(result => result?.result !== 'ungraded').length,
+            wins: filteredResults.filter(result => result?.result === 'win').length,
+            losses: filteredResults.filter(result => result?.result === 'loss').length,
+            pushes: filteredResults.filter(result => result?.result === 'push').length,
+            ungraded: filteredResults.filter(result => result?.result === 'ungraded').length
+          };
+          filteredSummary.accuracy = filteredSummary.graded ? Math.round((filteredSummary.wins / filteredSummary.graded) * 1000) / 1000 : null;
+          return {
+            ...item,
+            resultSummary: filteredSummary,
+            results: filteredResults
+          };
+        })
+        .filter(Boolean);
+    }
     function renderDashboard(data) {
       const mount = document.getElementById('dashboard-content');
       if (!mount) return;
       const summary = data?.summary || {};
       const byMarket = data?.byMarket || {};
-      const history = Array.isArray(data?.history) ? data.history : [];
+      const history = applyDashboardFilters(data?.history);
       const settleErrors = Array.isArray(data?.settleErrors) ? data.settleErrors : [];
+      const filteredSummary = history.reduce((acc, item) => {
+        const rs = item?.resultSummary || {};
+        acc.games += 1;
+        acc.picks += Number(rs?.picks || 0);
+        acc.graded += Number(rs?.graded || 0);
+        acc.wins += Number(rs?.wins || 0);
+        acc.losses += Number(rs?.losses || 0);
+        acc.pushes += Number(rs?.pushes || 0);
+        acc.ungraded += Number(rs?.ungraded || 0);
+        return acc;
+      }, { games: 0, picks: 0, graded: 0, wins: 0, losses: 0, pushes: 0, ungraded: 0 });
+      filteredSummary.accuracy = filteredSummary.graded ? Number((filteredSummary.wins / filteredSummary.graded).toFixed(3)) : null;
       const noteHtml = settleErrors.length
         ? `<div class="dashboard-note warn">Algunos juegos no se pudieron liquidar en este intento (${settleErrors.length}). El dashboard seguirá reintentando automáticamente.</div>`
         : `<div class="dashboard-note">Los picks pendientes se reevalúan cada vez que abres o actualizas este dashboard. Cuando un partido termina, la sugerencia ganada se marca en verde.</div>`;
       const overallCards = [
-        { label: 'Picks evaluados', value: Number(summary.graded || 0), meta: `Total registrados: ${Number(summary.picks || 0)}` },
-        { label: 'Ganadas', value: Number(summary.wins || 0), meta: `Perdidas: ${Number(summary.losses || 0)} · Push: ${Number(summary.pushes || 0)}` },
-        { label: 'Efectividad', value: summary.accuracy == null ? 'N/D' : `${Math.round(Number(summary.accuracy) * 100)}%`, meta: `Juegos cerrados: ${Number(summary.games || 0)}` },
-        { label: 'Pendientes', value: Number(data?.pending || 0), meta: `Sin liquidar: ${Number(summary.ungraded || 0)}` }
+        { label: 'Picks evaluados', value: Number(filteredSummary.graded || 0), meta: `Total filtrados: ${Number(filteredSummary.picks || 0)}` },
+        { label: 'Ganadas', value: Number(filteredSummary.wins || 0), meta: `Perdidas: ${Number(filteredSummary.losses || 0)} · Push: ${Number(filteredSummary.pushes || 0)}` },
+        { label: 'Efectividad', value: filteredSummary.accuracy == null ? 'N/D' : `${Math.round(Number(filteredSummary.accuracy) * 100)}%`, meta: `Juegos filtrados: ${Number(filteredSummary.games || 0)}` },
+        { label: 'Pendientes', value: Number(filteredSummary.ungraded || 0), meta: `Pendientes globales: ${Number(data?.pending || 0)}` }
       ];
-      const marketCards = Object.entries(byMarket)
-        .sort((a, b) => Number(b[1]?.wins || 0) - Number(a[1]?.wins || 0))
+      const marketMap = {};
+      for (const item of history) {
+        for (const result of (item?.results || [])) {
+          const market = String(result?.market || 'OTROS').toUpperCase();
+          if (!marketMap[market]) marketMap[market] = { wins: 0, losses: 0, pushes: 0, ungraded: 0, graded: 0 };
+          if (result?.result === 'win') { marketMap[market].wins += 1; marketMap[market].graded += 1; }
+          else if (result?.result === 'loss') { marketMap[market].losses += 1; marketMap[market].graded += 1; }
+          else if (result?.result === 'push') { marketMap[market].pushes += 1; marketMap[market].graded += 1; }
+          else marketMap[market].ungraded += 1;
+        }
+      }
+      const marketCards = Object.entries(marketMap)
+        .sort((a, b) => Number((b[1]?.wins || 0) + (b[1]?.graded || 0)) - Number((a[1]?.wins || 0) + (a[1]?.graded || 0)))
         .map(([market, stats]) => `
           <div class="market-card">
             <div class="label">${esc(market)}</div>
-            <div class="value">${stats?.accuracy == null ? 'N/D' : `${Math.round(Number(stats.accuracy) * 100)}%`}</div>
+            <div class="value">${stats?.graded ? `${Math.round((Number(stats.wins || 0) / Number(stats.graded || 1)) * 100)}%` : 'N/D'}</div>
             <div class="meta">W ${Number(stats?.wins || 0)} · L ${Number(stats?.losses || 0)} · P ${Number(stats?.pushes || 0)} · U ${Number(stats?.ungraded || 0)}</div>
           </div>
         `).join('');
@@ -470,8 +587,32 @@
       }
     }
     const refreshButton = document.getElementById('refresh-dashboard');
+    const marketFilter = document.getElementById('market-filter');
+    const dateFilter = document.getElementById('date-filter');
+    const clearFiltersButton = document.getElementById('clear-filters');
     if (refreshButton) {
       refreshButton.addEventListener('click', () => loadDashboard());
+    }
+    if (marketFilter) {
+      marketFilter.addEventListener('change', () => {
+        dashboardFilters.market = String(marketFilter.value || 'ALL').toUpperCase();
+        loadDashboard();
+      });
+    }
+    if (dateFilter) {
+      dateFilter.addEventListener('change', () => {
+        dashboardFilters.dateKey = inputValueToDateKey(dateFilter.value);
+        loadDashboard();
+      });
+    }
+    if (clearFiltersButton) {
+      clearFiltersButton.addEventListener('click', () => {
+        dashboardFilters.market = 'ALL';
+        dashboardFilters.dateKey = '';
+        if (marketFilter) marketFilter.value = 'ALL';
+        if (dateFilter) dateFilter.value = '';
+        loadDashboard();
+      });
     }
     const themeToggle = document.getElementById('theme-toggle');
     const savedTheme = localStorage.getItem('theme');

@@ -200,6 +200,38 @@ function finalizeBucket(bucket) {
   return bucket;
 }
 
+async function settlePendingDoc(collection, doc) {
+  const summary = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${doc.gameId}`);
+  const state = summary?.header?.competitions?.[0]?.status?.type?.state || '';
+  if (state !== 'post') return { updated: false, skipped: true };
+  const competitors = summary?.header?.competitions?.[0]?.competitors || [];
+  const away = competitors.find(c => c.homeAway === 'away') || {};
+  const home = competitors.find(c => c.homeAway === 'home') || {};
+  const awayScore = Number(away?.score || 0);
+  const homeScore = Number(home?.score || 0);
+  const winnerAbr = awayScore > homeScore ? away?.team?.abbreviation : home?.team?.abbreviation;
+  const starterMap = buildStarterMap(summary);
+  const finalData = { totalRuns: awayScore + homeScore, winnerAbr: String(winnerAbr || '') };
+  const results = (doc.picks || []).map(pick => ({
+    ...evaluatePick(pick, finalData, starterMap),
+    badge: String(pick?.badge || 'lean'),
+    source: String(pick?.source || 'model')
+  }));
+  const resultSummary = summarizeResults(results);
+  await collection.updateOne(
+    { _id: doc._id },
+    {
+      $set: {
+        settled: true,
+        settledAt: new Date().toISOString(),
+        resultSummary: { ...resultSummary, totalRuns: finalData.totalRuns, winnerAbr: finalData.winnerAbr },
+        results
+      }
+    }
+  );
+  return { updated: true };
+}
+
 export default async function handler(req) {
   try {
     if (req.method !== 'POST' && req.method !== 'GET') {
@@ -207,45 +239,23 @@ export default async function handler(req) {
     }
     const db = await getDb();
     const collection = db.collection('picks');
-    const docs = await collection.find({ settled: { $ne: true } }).toArray();
+    const docs = await collection.find({ settled: { $ne: true } }).sort({ dateKey: -1, updatedAt: -1 }).limit(24).toArray();
     let updated = 0;
     const settleErrors = [];
-    for (const doc of docs) {
-      try {
-        const summary = await fetchJson(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${doc.gameId}`);
-        const state = summary?.header?.competitions?.[0]?.status?.type?.state || '';
-        if (state !== 'post') continue;
-        const competitors = summary?.header?.competitions?.[0]?.competitors || [];
-        const away = competitors.find(c => c.homeAway === 'away') || {};
-        const home = competitors.find(c => c.homeAway === 'home') || {};
-        const awayScore = Number(away?.score || 0);
-        const homeScore = Number(home?.score || 0);
-        const winnerAbr = awayScore > homeScore ? away?.team?.abbreviation : home?.team?.abbreviation;
-        const starterMap = buildStarterMap(summary);
-        const finalData = { totalRuns: awayScore + homeScore, winnerAbr: String(winnerAbr || '') };
-        const results = (doc.picks || []).map(pick => ({
-          ...evaluatePick(pick, finalData, starterMap),
-          badge: String(pick?.badge || 'lean'),
-          source: String(pick?.source || 'model')
-        }));
-        const resultSummary = summarizeResults(results);
-        await collection.updateOne(
-          { _id: doc._id },
-          {
-            $set: {
-              settled: true,
-              settledAt: new Date().toISOString(),
-              resultSummary: { ...resultSummary, totalRuns: finalData.totalRuns, winnerAbr: finalData.winnerAbr },
-              results
-            }
-          }
-        );
-        updated += 1;
-      } catch (error) {
-        settleErrors.push({
-          gameId: String(doc?.gameId || ''),
-          message: String(error?.message || 'settle-error')
-        });
+    for (let i = 0; i < docs.length; i += 4) {
+      const batch = docs.slice(i, i + 4);
+      const results = await Promise.allSettled(batch.map(doc => settlePendingDoc(collection, doc)));
+      for (let j = 0; j < results.length; j += 1) {
+        const result = results[j];
+        const doc = batch[j];
+        if (result.status === 'fulfilled') {
+          if (result.value?.updated) updated += 1;
+        } else {
+          settleErrors.push({
+            gameId: String(doc?.gameId || ''),
+            message: String(result.reason?.message || 'settle-error')
+          });
+        }
       }
     }
     const pending = await collection.countDocuments({ settled: { $ne: true } });
