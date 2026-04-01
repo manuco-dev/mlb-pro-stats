@@ -239,7 +239,9 @@ async function settlePendingDoc(collection, doc) {
   const results = (doc.picks || []).map(pick => ({
     ...evaluatePick(pick, finalData, starterMap),
     badge: String(pick?.badge || 'lean'),
-    source: String(pick?.source || 'model')
+    source: String(pick?.source || 'model'),
+    prob: Number.isFinite(Number(pick?.prob)) ? Number(pick.prob) : null,
+    score: Number.isFinite(Number(pick?.score)) ? Number(pick.score) : null
   }));
   const resultSummary = summarizeResults(results);
   await collection.updateOne(
@@ -302,6 +304,15 @@ export default async function handler(req, res) {
     }
     for (const doc of allDocs) {
       const settled = doc?.settled === true;
+      const pickMetaByText = new Map(
+        (Array.isArray(doc?.picks) ? doc.picks : []).map(pick => [
+          String(pick?.text || ''),
+          {
+            prob: Number.isFinite(Number(pick?.prob)) ? Number(pick.prob) : null,
+            score: Number.isFinite(Number(pick?.score)) ? Number(pick.score) : null
+          }
+        ])
+      );
       const picks = settled
         ? (Array.isArray(doc?.results) ? doc.results : [])
         : (Array.isArray(doc?.picks) ? doc.picks.map(pick => ({
@@ -312,7 +323,9 @@ export default async function handler(req, res) {
             result: 'ungraded',
             actualDisplay: '',
             badge: String(pick?.badge || 'lean'),
-            source: String(pick?.source || 'model')
+            source: String(pick?.source || 'model'),
+            prob: Number.isFinite(Number(pick?.prob)) ? Number(pick.prob) : null,
+            score: Number.isFinite(Number(pick?.score)) ? Number(pick.score) : null
           })) : []);
       history.push({
         gameId: String(doc?.gameId || ''),
@@ -324,6 +337,7 @@ export default async function handler(req, res) {
         settled,
         resultSummary: doc?.resultSummary || summarizeResults(picks),
         results: picks.map(result => ({
+          ...(pickMetaByText.get(String(result?.text || '')) || {}),
           text: String(result?.text || ''),
           market: String(result?.market || ''),
           side: String(result?.side || ''),
@@ -331,7 +345,9 @@ export default async function handler(req, res) {
           result: String(result?.result || 'ungraded'),
           actualDisplay: String(result?.actualDisplay || ''),
           badge: String(result?.badge || 'lean'),
-          source: String(result?.source || 'model')
+          source: String(result?.source || 'model'),
+          prob: Number.isFinite(Number(result?.prob)) ? Number(result.prob) : null,
+          score: Number.isFinite(Number(result?.score)) ? Number(result.score) : null
         }))
       });
       for (const result of picks) {

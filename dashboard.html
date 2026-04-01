@@ -277,6 +277,29 @@
     .table-game { font-weight: 800; color: var(--text); }
     .table-date { min-width: 150px; color: var(--muted); }
     .table-actual { color: var(--muted); }
+    .pick-cell {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pick-prob {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: rgba(59,130,246,0.14);
+      color: #2563eb;
+      border: 1px solid rgba(59,130,246,0.25);
+      font-size: 0.72rem;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .pick-prob.total {
+      background: rgba(34,197,94,0.14);
+      color: #16a34a;
+      border-color: rgba(34,197,94,0.25);
+    }
     .site-footer {
       text-align: center;
       color: var(--muted);
@@ -528,17 +551,16 @@
         return (item?.results || []).map(result => {
           const state = String(result?.result || 'ungraded');
           const statusLabel = state === 'win' ? 'Ganada' : state === 'loss' ? 'Perdida' : state === 'push' ? 'Push' : 'Pendiente';
-          const line = Number.isFinite(Number(result?.line)) ? Number(result.line) : '';
+          const prob = Number(result?.prob);
+          const showProb = String(result?.market || '').toUpperCase() === 'TOTAL' && Number.isFinite(prob);
+          const probBadge = showProb ? `<span class="pick-prob total">${Math.round(prob * 100)}%</span>` : '';
           return `
             <tr>
               <td class="table-date">${esc(dateLabel)}</td>
               <td><div class="table-game">${esc(gameLabel)}</div><div class="table-actual">Ganador: ${esc(summaryRow?.winnerAbr || 'Pendiente')}</div></td>
-              <td>${esc(result?.text || '')}</td>
+              <td><div class="pick-cell"><span>${esc(result?.text || '')}</span>${probBadge}</div></td>
               <td>${esc(result?.market || '')}</td>
-              <td>${esc(result?.side || '')}</td>
-              <td>${line === '' ? '—' : esc(line)}</td>
               <td><span class="pick-result ${state}">${statusLabel}</span></td>
-              <td class="table-actual">${result?.actualDisplay ? esc(result.actualDisplay) : '—'}</td>
             </tr>
           `;
         });
@@ -560,10 +582,7 @@
                 <th>Juego</th>
                 <th>Pick</th>
                 <th>Mercado</th>
-                <th>Lado</th>
-                <th>Línea</th>
                 <th>Estado</th>
-                <th>Real</th>
               </tr>
             </thead>
             <tbody>${tableRows}</tbody>
