@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Equipos que más se ponchan</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --card-bg: #111827;
+      --card-border: rgba(148,163,184,0.18);
+      --pill-bg: #0f172a;
+      --inner-bg: #0f172a;
+      --accent: #e85d4a;
+    }
+    body.light {
+      --bg: #f8fafc;
+      --text: #0f172a;
+      --muted: #64748b;
+      --card-bg: #ffffff;
+      --card-border: rgba(15,23,42,0.10);
+      --pill-bg: #f8fafc;
+      --inner-bg: #ffffff;
+      --accent: #dc5c4c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 2.5rem 1rem;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      max-width: 1080px;
+      margin: 0 auto 1.4rem;
+      text-align: center;
+      position: relative;
+    }
+    .header-actions {
+      position: absolute;
+      top: 0.5rem;
+      left: 0;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .header-link, .theme-toggle, .toolbar-btn, .season-select {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .theme-toggle {
+      position: absolute;
+      top: 0.5rem;
+      right: 0;
+    }
+    .season-select {
+      border-radius: 10px;
+      padding-right: 32px;
+    }
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin: 0;
+      background: linear-gradient(135deg, #e63946 0%, #f4a261 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p {
+      color: var(--muted);
+      margin-top: 0.5rem;
+      font-size: 0.92rem;
+    }
+    .section {
+      max-width: 1080px;
+      margin: 0 auto 1rem;
+      border: 1px solid var(--card-border);
+      background: var(--inner-bg);
+      border-radius: 12px;
+      padding: 0.95rem 1rem;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 0.85rem;
+    }
+    .toolbar-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 170px;
+    }
+    .toolbar-group label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 800;
+      text-align: left;
+    }
+    .view-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 0.9rem;
+    }
+    .view-tab {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .view-tab.active {
+      background: #1d4ed8;
+      border-color: #1d4ed8;
+      color: #fff;
+    }
+    .intro {
+      color: var(--muted);
+      font-size: 0.82rem;
+      text-align: center;
+      margin-bottom: 0.9rem;
+      line-height: 1.45;
+    }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 0.9rem;
+    }
+    .summary-card {
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      background: var(--pill-bg);
+      padding: 0.9rem;
+    }
+    .summary-card .label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.35rem;
+      font-weight: 800;
+    }
+    .summary-card .value {
+      font-size: 1.45rem;
+      font-weight: 900;
+      color: var(--text);
+      line-height: 1;
+    }
+    .summary-card .meta {
+      margin-top: 0.45rem;
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.35;
+    }
+    .table-wrap {
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow: auto;
+      background: var(--inner-bg);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 940px;
+    }
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--card-border);
+      text-align: left;
+      font-size: 0.8rem;
+      vertical-align: middle;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: var(--pill-bg);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-size: 0.68rem;
+      font-weight: 900;
+      z-index: 1;
+    }
+    tbody tr:hover {
+      background: rgba(88,166,255,0.06);
+    }
+    .rank {
+      font-weight: 900;
+      color: var(--accent);
+      width: 70px;
+    }
+    .team-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .team-logo {
+      width: 28px;
+      height: 28px;
+      object-fit: contain;
+    }
+    .team-name {
+      font-weight: 800;
+      color: var(--text);
+    }
+    .team-abr {
+      color: var(--muted);
+      font-size: 0.74rem;
+      margin-top: 2px;
+    }
+    .k-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(239,68,68,0.14);
+      color: #dc2626;
+      border: 1px solid rgba(239,68,68,0.24);
+      font-size: 0.74rem;
+      font-weight: 800;
+    }
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--card-border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    .empty {
+      border: 1px dashed var(--card-border);
+      border-radius: 12px;
+      padding: 1rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (max-width: 760px) {
+      .summary-grid { grid-template-columns: 1fr; }
+      .header-actions, .theme-toggle {
+        position: static;
+        margin-top: 0.6rem;
+      }
+      .header-actions { justify-content: center; }
+      header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-actions">
+      <a class="header-link" href="./">⬅ Volver a partidos</a>
+      <a class="header-link" href="./dashboard.html">📊 Dashboard</a>
+    </div>
+    <h1>📉 Equipos Más Ponchados</h1>
+    <p>Ranking de equipos MLB desde los que más se ponchan hasta los que menos se ponchan.</p>
+    <button id="theme-toggle" class="theme-toggle">🌙 Modo oscuro</button>
+  </header>
+
+  <section class="section">
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <label for="season-select">Temporada</label>
+        <select id="season-select" class="season-select"></select>
+      </div>
+      <div class="toolbar-group" style="justify-content:flex-end;">
+        <label>&nbsp;</label>
+        <button id="refresh-btn" class="toolbar-btn">Actualizar ranking</button>
+      </div>
+    </div>
+    <div class="view-tabs">
+      <button class="view-tab active" data-view="overall">Total</button>
+      <button class="view-tab" data-view="vsLeft">Vs LHP</button>
+      <button class="view-tab" data-view="vsRight">Vs RHP</button>
+    </div>
+    <div id="content" class="intro">Cargando ranking de ponches…</div>
+  </section>
+
+  <script>
+    function esc(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    async function fetchAppJson(url, options) {
+      const response = await fetch(url, options);
+      const text = await response.text();
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const trimmed = text.trim();
+      if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
+        throw new Error('La API local no está activa. Ejecuta el proyecto con "npm run dev" para habilitar /api.');
+      }
+      return JSON.parse(text);
+    }
+
+    const currentYear = new Date().getFullYear();
+    const seasonSelect = document.getElementById('season-select');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const content = document.getElementById('content');
+    const viewTabs = Array.from(document.querySelectorAll('.view-tab'));
+    let currentView = 'overall';
+
+    function fillSeasonOptions() {
+      const years = [];
+      for (let year = currentYear; year >= 2025; year -= 1) years.push(year);
+      seasonSelect.innerHTML = years.map(year => `<option value="${year}">${year}</option>`).join('');
+      seasonSelect.value = String(currentYear);
+    }
+
+    function metricsForView(team, view) {
+      if (view === 'vsLeft') {
+        return {
+          strikeouts: Number(team?.vsLeft?.strikeouts || 0),
+          kpg: Number(team?.vsLeft?.kpg || 0),
+          kRate: Number(team?.vsLeft?.kRate || 0),
+          plateAppearances: Number(team?.vsLeft?.plateAppearances || 0),
+          gamesPlayed: Number(team?.vsLeft?.gamesPlayed || 0)
+        };
+      }
+      if (view === 'vsRight') {
+        return {
+          strikeouts: Number(team?.vsRight?.strikeouts || 0),
+          kpg: Number(team?.vsRight?.kpg || 0),
+          kRate: Number(team?.vsRight?.kRate || 0),
+          plateAppearances: Number(team?.vsRight?.plateAppearances || 0),
+          gamesPlayed: Number(team?.vsRight?.gamesPlayed || 0)
+        };
+      }
+      return {
+        strikeouts: Number(team?.strikeouts || 0),
+        kpg: Number(team?.kpg || 0),
+        kRate: Number(team?.kRate || 0),
+        plateAppearances: Number(team?.plateAppearances || 0),
+        gamesPlayed: Number(team?.gamesPlayed || 0)
+      };
+    }
+
+    function viewLabel(view) {
+      if (view === 'vsLeft') return 'vs LHP';
+      if (view === 'vsRight') return 'vs RHP';
+      return 'total';
+    }
+
+    function renderRanking(data) {
+      const teams = (Array.isArray(data?.teams) ? data.teams : [])
+        .map(team => ({ ...team, metrics: metricsForView(team, currentView) }))
+        .sort((a, b) => b.metrics.strikeouts - a.metrics.strikeouts || b.metrics.kRate - a.metrics.kRate || a.displayName.localeCompare(b.displayName))
+        .map((team, index) => ({ ...team, rankView: index + 1 }));
+      if (!teams.length) {
+        content.innerHTML = '<div class="empty">No se encontraron datos de equipos para esta temporada.</div>';
+        return;
+      }
+      const top = teams[0];
+      const bottom = teams[teams.length - 1];
+      const avgKpg = teams.reduce((acc, team) => acc + Number(team.metrics.kpg || 0), 0) / Math.max(teams.length, 1);
+      const summaryCards = [
+        { label: 'Equipo más ponchado', value: top.abbreviation, meta: `${top.displayName} · ${Math.round(top.metrics.strikeouts)} K ${viewLabel(currentView)}` },
+        { label: 'Equipo menos ponchado', value: bottom.abbreviation, meta: `${bottom.displayName} · ${Math.round(bottom.metrics.strikeouts)} K ${viewLabel(currentView)}` },
+        { label: 'Promedio MLB', value: avgKpg.toFixed(1), meta: `Ponches por juego ${viewLabel(currentView)}` },
+        { label: 'Temporada', value: String(data?.season || currentYear), meta: `${teams.length} equipos analizados` }
+      ];
+      const rows = teams.map(team => `
+        <tr>
+          <td class="rank">#${team.rankView}</td>
+          <td>
+            <div class="team-cell">
+              ${team.logo ? `<img class="team-logo" src="${esc(team.logo)}" alt="${esc(team.abbreviation)}" />` : ''}
+              <div>
+                <div class="team-name">${esc(team.displayName)}</div>
+                <div class="team-abr">${esc(team.abbreviation)}</div>
+              </div>
+            </div>
+          </td>
+          <td><span class="k-badge">${Math.round(Number(team.metrics.strikeouts || 0))} K</span></td>
+          <td>${Number(team.metrics.kpg || 0).toFixed(1)}</td>
+          <td>${Math.round(Number(team.metrics.kRate || 0) * 100)}%</td>
+          <td>${Math.round(Number(team.metrics.plateAppearances || 0))}</td>
+          <td>${Math.round(Number(team.metrics.gamesPlayed || 0))}</td>
+        </tr>
+      `).join('');
+      content.innerHTML = `
+        <div class="intro">Este ranking te ayuda a identificar qué equipos están regalando más strikeouts para fortalecer el análisis de props de K, tanto en total como frente a zurdos y derechos.</div>
+        <div class="summary-grid">
+          ${summaryCards.map(card => `<div class="summary-card"><div class="label">${esc(card.label)}</div><div class="value">${esc(card.value)}</div><div class="meta">${esc(card.meta)}</div></div>`).join('')}
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Equipo</th>
+                <th>Ponches</th>
+                <th>K/J</th>
+                <th>K%</th>
+                <th>PA</th>
+                <th>Juegos</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    }
+
+    async function loadRanking() {
+      content.innerHTML = '<span class="spinner"></span> Cargando ranking de ponches…';
+      try {
+        const season = Number(seasonSelect.value || currentYear);
+        const data = await fetchAppJson(`/api/team-strikeouts?season=${season}`);
+        if (!data?.ok) throw new Error(data?.error || 'No se pudo cargar el ranking');
+        renderRanking(data);
+      } catch (error) {
+        content.innerHTML = `<div class="empty">No se pudo cargar el ranking: ${esc(error.message || 'error')}</div>`;
+      }
+    }
+
+    const themeToggle = document.getElementById('theme-toggle');
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') document.body.classList.add('light');
+    if (themeToggle) {
+      const paint = () => {
+        themeToggle.textContent = document.body.classList.contains('light') ? '☀️ Modo claro' : '🌙 Modo oscuro';
+      };
+      paint();
+      themeToggle.addEventListener('click', () => {
+        document.body.classList.toggle('light');
+        localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+        paint();
+      });
+    }
+
+    fillSeasonOptions();
+    seasonSelect.addEventListener('change', loadRanking);
+    refreshBtn.addEventListener('click', loadRanking);
+    for (const tab of viewTabs) {
+      tab.addEventListener('click', () => {
+        currentView = String(tab.dataset.view || 'overall');
+        for (const btn of viewTabs) btn.classList.toggle('active', btn === tab);
+        loadRanking();
+      });
+    }
+    loadRanking();
+  </script>
+</body>
+</html>

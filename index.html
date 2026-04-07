@@ -1088,6 +1088,8 @@
   <div class="header-actions">
     <a id="glossary-link" class="header-link" href="./glossary.html">📘 Glosario rápido</a>
     <a id="dashboard-link" class="header-link" href="./dashboard.html">📊 Dashboard</a>
+    <a id="backtest-link" class="header-link" href="./backtest-dashboard.html">🧪 Backtesting</a>
+    <a id="team-k-link" class="header-link" href="./team-strikeouts.html">📉 Equipos K</a>
   </div>
   <h1>⚾ MLB – Partidos de Hoy</h1>
   <p id="date-label">Cargando…</p>
@@ -1194,15 +1196,34 @@
 
   const PARK_FACTORS = {
     'Coors Field': 1.15,
-    'Fenway Park': 1.08,
     'Great American Ball Park': 1.10,
-    'Wrigley Field': 1.04,
+    'Fenway Park': 1.08,
+    'Citizens Bank Park': 1.07,
+    'Guaranteed Rate Field': 1.06,
     'Yankee Stadium': 1.05,
     'Globe Life Field': 1.04,
-    'Dodger Stadium': 1.02,
     'Chase Field': 1.05,
+    'Wrigley Field': 1.04,
+    'Camden Yards': 1.04,
+    'Oriole Park': 1.04,
+    'Rogers Centre': 1.03,
+    'Minute Maid Park': 1.03,
+    'American Family Field': 1.03,
+    'Dodger Stadium': 1.02,
+    'Truist Park': 1.02,
+    'Kauffman Stadium': 1.02,
+    'Target Field': 1.01,
+    'Angel Stadium': 1.01,
+    'Nationals Park': 1.01,
+    'Citi Field': 0.99,
+    'Busch Stadium': 0.98,
+    'PNC Park': 0.98,
     'Petco Park': 0.97,
+    'Comerica Park': 0.97,
+    'loanDepot park': 0.97,
     'Oracle Park': 0.96,
+    'Tropicana Field': 0.96,
+    'Oakland Coliseum': 0.96,
     'T-Mobile Park': 0.95
   };
   function getParkFactor(venueName) {
@@ -1617,8 +1638,71 @@
     });
     try { await Promise.allSettled(tasks); } catch(_) {}
     try { await callBackendAnalyze(); } catch(_) {}
+    try { await callAiForPicks(); } catch(_) {}
+    // 3.2: Consensus — reconcile model vs AI picks
+    applyConsensus();
     renderSummary();
     schedulePicksSync(500);
+  }
+
+  // 3.2: Consensus function — upgrade matching picks, remove conflicting ones
+  function applyConsensus() {
+    for (const [cardId, entry] of Object.entries(picksMap)) {
+      if (!entry.picks || entry.picks.length < 2) continue;
+      const modelPicks = entry.picks.filter(p => p.source === 'model');
+      const aiPicks = entry.picks.filter(p => p.source === 'ai');
+      if (!modelPicks.length || !aiPicks.length) continue;
+
+      const getMarketKey = (p) => {
+        const m = String(p.market || '').toUpperCase();
+        if (m === 'ML') return `ML`;
+        if (m === 'TOTAL') return `TOTAL`;
+        return `${m}_${(p.subject || '').toLowerCase()}`;
+      };
+      const getSide = (p) => {
+        const m = String(p.market || '').toUpperCase();
+        if (m === 'ML') return String(p.subject || '').toUpperCase();
+        return String(p.side || '').toLowerCase();
+      };
+
+      // Build map of AI picks by market key
+      const aiMap = new Map();
+      for (const ap of aiPicks) aiMap.set(getMarketKey(ap), ap);
+
+      const toRemove = new Set();
+      for (const mp of modelPicks) {
+        const mk = getMarketKey(mp);
+        const ai = aiMap.get(mk);
+        if (!ai) continue; // no AI pick for this market
+
+        const modelSide = getSide(mp);
+        const aiSide = getSide(ai);
+
+        if (modelSide === aiSide) {
+          // CONSENSUS: both agree → upgrade the best one to strong
+          mp.badge = 'strong';
+          mp.reason = (mp.reason || '') + ' [Consenso modelo+IA]';
+          // Remove the AI duplicate since model is upgraded
+          toRemove.add(ai.text);
+        } else {
+          // CONFLICT: opposite sides → remove the weaker one
+          const mpScore = pickPriorityScore(mp);
+          const aiScore = pickPriorityScore(ai);
+          if (mpScore >= aiScore) {
+            toRemove.add(ai.text); // remove AI pick
+            if (mp.badge === 'strong') mp.badge = 'lean'; // downgrade model
+          } else {
+            toRemove.add(mp.text); // remove model pick
+            if (ai.badge === 'strong') ai.badge = 'lean'; // downgrade AI
+          }
+        }
+      }
+
+      if (toRemove.size) {
+        entry.picks = entry.picks.filter(p => !toRemove.has(p.text));
+        picksMap[cardId] = entry;
+      }
+    }
   }
 
   async function callAiForPicks() {
@@ -1883,6 +1967,35 @@
     };
   }
 
+  async function fetchTeamSeasonStrikeoutProfile(teamId, season) {
+    const [scheduleData, statsData] = await Promise.all([
+      fetchTeamSchedule(teamId, season),
+      (async () => {
+        const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/${teamId}/statistics?season=${season}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('statistics');
+        return res.json();
+      })()
+    ]);
+    const events = Array.isArray(scheduleData?.events) ? scheduleData.events : [];
+    const completedGames = events.filter(event => {
+      const state = event?.competitions?.[0]?.status?.type?.state || event?.status?.type?.state || '';
+      return state === 'post';
+    }).length;
+    const batting = (statsData?.splits?.categories || []).find(cat => cat.name === 'batting');
+    const stats = batting?.stats || [];
+    const strikeouts = safeNum(stats.find(stat => stat.name === 'strikeouts')?.value);
+    const plateAppearances = safeNum(stats.find(stat => stat.name === 'plateAppearances')?.value);
+    const gamesPlayed = completedGames || safeNum(stats.find(stat => stat.name === 'gamesPlayed')?.value);
+    return {
+      strikeouts,
+      plateAppearances,
+      gamesPlayed,
+      kRate: plateAppearances > 0 ? strikeouts / plateAppearances : 0,
+      kpg: gamesPlayed > 0 ? strikeouts / gamesPlayed : 0
+    };
+  }
+
   async function fetchTeamMergedSeasonOffense(teamId, seasons) {
     const results = await Promise.allSettled(seasons.map(season => fetchTeamSeasonRPG(teamId, season)));
     const rows = results.filter(result => result.status === 'fulfilled').map(result => result.value);
@@ -1992,6 +2105,91 @@
     const k9   = sumIP > 0 ? (sumK * 9) / sumIP : 0;
     const ipPerGame = sumIP / n;
     return { era, whip, k9, ipPerGame, games: n };
+  }
+
+  // ── Lineup detection from ESPN game summary ───────────────
+  async function fetchEventLineup(eventId, teamId) {
+    try {
+      const sum = await fetchGameSummary(eventId);
+      const players = getSummaryPlayerBlocks(sum);
+      const teamBlock = players.find(p => String(p.team?.id) === String(teamId));
+      const battingBlock = teamBlock?.statistics?.find(s => s.type === 'batting');
+      const athletes = battingBlock?.athletes || [];
+      // If we have athletes in the batting block, lineup is posted
+      if (athletes.length >= 7) {
+        // Count hitters with at-bats info available (lineup is confirmed)
+        const hitters = athletes.filter(a => {
+          const stats = a?.stats || [];
+          return stats.length > 0;
+        });
+        return {
+          confirmed: true,
+          hitterCount: hitters.length,
+          names: athletes.slice(0, 9).map(a => a?.athlete?.shortName || a?.athlete?.displayName || '').filter(Boolean)
+        };
+      }
+      // Try rosters as fallback
+      const rosters = sum?.rosters || [];
+      const teamRoster = rosters.find(r => String(r.team?.id) === String(teamId));
+      const roster = teamRoster?.roster || [];
+      if (roster.length > 0) {
+        const starters = roster.filter(r => r.starter || r.batOrder > 0);
+        if (starters.length >= 7) {
+          return {
+            confirmed: true,
+            hitterCount: starters.length,
+            names: starters.slice(0, 9).map(r => r?.athlete?.shortName || r?.athlete?.displayName || '').filter(Boolean)
+          };
+        }
+      }
+      return { confirmed: false, hitterCount: 0, names: [] };
+    } catch (_) {
+      return { confirmed: false, hitterCount: 0, names: [] };
+    }
+  }
+
+  // ── Umpire detection + K-zone tendencies ───────────────────
+  const UMPIRE_K_ZONE = {
+    'Angel Hernandez': 0.92, 'CB Bucknor': 0.94, 'Laz Diaz': 0.91,
+    'Andy Fletcher': 0.93, 'Lance Barrett': 0.95, 'Jansen Visconti': 0.95,
+    'Todd Tichenor': 0.97, 'Marvin Hudson': 0.96,
+    'Mark Carlson': 1.02, 'John Tumpane': 1.01, 'Bill Miller': 1.03,
+    'Ron Kulpa': 1.03, 'Pat Hoberg': 1.04, 'James Hoye': 1.04,
+    'Quinn Wolcott': 1.05, 'Nic Lentz': 1.05, 'Tripp Gibson': 1.06,
+    'Joe West': 1.06, 'Dan Iassogna': 1.07, 'Stu Scheurwater': 1.08,
+    'Adam Hamari': 1.04, 'Chris Guccione': 1.03, 'Bruce Dreckman': 1.05,
+    'Alan Porter': 1.02, 'Ben May': 0.96, 'Brennan Miller': 1.01,
+    'Carlos Torres': 0.97, 'Chad Fairchild': 1.02, 'Chris Conroy': 0.98,
+    'Chris Segal': 1.03, 'Clint Vondrak': 0.95, 'Cory Blaser': 1.01,
+    'D.J. Reyburn': 1.00, 'Dan Bellino': 0.99, 'Dan Merzel': 1.04,
+    'David Rackley': 1.02, 'Doug Eddings': 0.98, 'Ed Hickox': 1.00,
+    'Edwin Moscoso': 0.96, 'Erich Bacchus': 1.01, 'Gabe Morales': 0.99,
+    'Gerry Davis': 1.03, 'Greg Gibson': 1.02, 'Hunter Wendelstedt': 1.05,
+    'Jeff Nelson': 0.97, 'Jerry Layne': 1.00, 'Jim Reynolds': 1.01,
+    'Jim Wolf': 1.06, 'Jordan Baker': 0.95, 'Larry Vanover': 1.00,
+    'Manny Gonzalez': 0.98, 'Mark Ripperger': 1.02, 'Mark Wegner': 1.03,
+    'Mike Estabrook': 0.97, 'Mike Muchlinski': 1.01, 'Nestor Ceja': 1.00,
+    'Nate Tomlinson': 0.99, 'Nick Mahrley': 1.02, 'Paul Clemons': 0.98,
+    'Phil Cuzzi': 1.03, 'Ramon De Jesus': 0.97, 'Rob Drake': 1.04,
+    'Roberto Ortiz': 0.96, 'Ryan Additon': 1.01, 'Ryan Blakney': 0.99,
+    'Sam Holbrook': 1.00, 'Sean Barber': 0.98, 'Shane Livensparger': 1.02,
+    'Ted Barrett': 1.03, 'Tom Hallion': 1.01, 'Tony Randazzo': 0.99,
+    'Vic Carapazza': 0.94, 'Will Little': 1.02
+  };
+
+  async function fetchGameUmpire(eventId) {
+    try {
+      const url = `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/summary?event=${eventId}`;
+      const data = await fetchJsonWithTimeout(url);
+      const officials = data?.gameInfo?.officials || [];
+      const hp = officials.find(o => /home\s*plate/i.test(o?.position?.name || o?.position?.displayName || ''));
+      if (!hp) return { name: null, kZone: 1.0 };
+      const name = hp.fullName || hp.displayName || '';
+      const kZone = UMPIRE_K_ZONE[name] || 1.0;
+      return { name, kZone };
+    } catch (_) {
+      return { name: null, kZone: 1.0 };
+    }
   }
 
   async function fetchTeamLast10Offense(teamId) {
@@ -2297,6 +2495,16 @@
       homeId ? fetchPitcherSplits(homeId, ANALYSIS_SEASONS) : Promise.reject(new Error('Sin ID'))
     ]);
 
+    // 2.3: Calculate rest days since last start
+    const calcRestDays = (result) => {
+      if (result.status !== 'fulfilled' || !result.value.length) return null;
+      const lastISO = result.value[0]?.isoDate;
+      if (!lastISO) return null;
+      return Math.max(0, Math.floor((Date.now() - new Date(lastISO).getTime()) / 86400000));
+    };
+    const restDaysAway = calcRestDays(awayResult);
+    const restDaysHome = calcRestDays(homeResult);
+
     const colAway = panelEl.querySelector('#col-away');
     const colHome = panelEl.querySelector('#col-home');
 
@@ -2348,6 +2556,7 @@
             avgIP: t.n ? t.ip/t.n : 0,
             avgK: t.n ? t.k/t.n : 0,
             whip: t.ip>0 ? (t.h + t.bb)/t.ip : 0,
+            avgR: t.n ? t.r/t.n : 0,
             n: t.n
           };
         };
@@ -2377,14 +2586,15 @@
         const avgIP = (stats.avgIP * (1 - splitWeight)) + (preferred.avgIP * splitWeight);
         const avgK = (stats.avgK * (1 - splitWeight)) + (preferred.avgK * splitWeight);
         const whip = (stats.whip * (1 - splitWeight)) + (preferred.whip * splitWeight);
+        const avgR = (stats.avgR * (1 - splitWeight)) + ((preferred.avgR || 0) * splitWeight);
         const kSplitAdj = (() => {
           const k9L = Number(split?.k9VsL||0), k9R = Number(split?.k9VsR||0);
           const diff = (k9L + k9R) ? ((Math.max(k9L,k9R) - Math.min(k9L,k9R)) / 9) : 0;
           return diff * 0.6;
         })();
-        const splitEdge = preferred.n ? ((preferred.avgIP - other.avgIP) * 0.55) + ((preferred.avgK - other.avgK) * 0.18) - ((preferred.whip - other.whip) * 1.2) : 0;
-        const score = (avgIP * 0.55) + ((avgK + kSplitAdj) * 0.12) + (stats.kbb * 0.65) - (whip * 1.7) + splitEdge;
-        return { score, splitWeight, preferred, other, splitEdge, focus, avgIP, avgK, whip, kSplitAdj };
+        const splitEdge = preferred.n ? ((preferred.avgIP - other.avgIP) * 0.55) + ((preferred.avgK - other.avgK) * 0.18) - ((preferred.whip - other.whip) * 1.2) - (((preferred.avgR || 0) - (other.avgR || 0)) * 0.45) : 0;
+        const score = (avgIP * 0.55) + ((avgK + kSplitAdj) * 0.12) + (stats.kbb * 0.65) - (whip * 1.7) - (avgR * 0.45) + splitEdge;
+        return { score, splitWeight, preferred, other, splitEdge, focus, avgIP, avgK, whip, avgR, kSplitAdj };
       };
       const A = summarize(gAway);
       const H = summarize(gHome);
@@ -2431,12 +2641,14 @@
       const moveMlAway = isNaN(mlAwayOpen)||isNaN(mlAway) ? NaN : mlAway - mlAwayOpen;
       const moveMlHome = isNaN(mlHomeOpen)||isNaN(mlHome) ? NaN : mlHome - mlHomeOpen;
       const moveOu = isNaN(ouOpen)||isNaN(ouLine) ? NaN : ouLine - ouOpen;
-      let offAway = {rpg:0,kpg:0,hpg:0,hotRate:0,coldRate:0,hotHittersPerGame:0,coldHittersPerGame:0,recentThreeHits:0,recentFiveHits:0,hotScore:0};
-      let offHome = {rpg:0,kpg:0,hpg:0,hotRate:0,coldRate:0,hotHittersPerGame:0,coldHittersPerGame:0,recentThreeHits:0,recentFiveHits:0,hotScore:0};
+      let offAway = {rpg:0,kpg:0,hpg:0,hotRate:0,coldRate:0,hotHittersPerGame:0,coldHittersPerGame:0,recentThreeHits:0,recentFiveHits:0,hotScore:0,seasonKRateCurrent:0,seasonKpgCurrent:0};
+      let offHome = {rpg:0,kpg:0,hpg:0,hotRate:0,coldRate:0,hotHittersPerGame:0,coldHittersPerGame:0,recentThreeHits:0,recentFiveHits:0,hotScore:0,seasonKRateCurrent:0,seasonKpgCurrent:0};
       let teamAvgAway = {avg:0,avgDisplay:'.000',ops:0,opsDisplay:'.000'};
       let teamAvgHome = {avg:0,avgDisplay:'.000',ops:0,opsDisplay:'.000'};
+      var lineupAway = { confirmed: false, hitterCount: 0, names: [] };
+      var lineupHome = { confirmed: false, hitterCount: 0, names: [] };
       try {
-        const [rAwayRes, rHomeRes, kAwayRes, kHomeRes, avgAwayRes, avgHomeRes, penAwayRes, penHomeRes] = await Promise.allSettled([
+        const [rAwayRes, rHomeRes, kAwayRes, kHomeRes, avgAwayRes, avgHomeRes, penAwayRes, penHomeRes, kSeasonAwayRes, kSeasonHomeRes, luAwayRes, luHomeRes, umpRes] = await Promise.allSettled([
           awayTeamId ? fetchTeamMergedSeasonOffense(awayTeamId, ANALYSIS_SEASONS) : Promise.reject(),
           homeTeamId ? fetchTeamMergedSeasonOffense(homeTeamId, ANALYSIS_SEASONS) : Promise.reject(),
           awayTeamId ? fetchTeamLast10Offense(awayTeamId) : Promise.reject(),
@@ -2444,25 +2656,44 @@
           awayTeamId ? fetchTeamSeasonBatting(awayTeamId, 2025) : Promise.reject(),
           homeTeamId ? fetchTeamSeasonBatting(homeTeamId, 2025) : Promise.reject(),
           awayTeamId ? fetchTeamBullpenLast10(awayTeamId) : Promise.reject(),
-          homeTeamId ? fetchTeamBullpenLast10(homeTeamId) : Promise.reject()
+          homeTeamId ? fetchTeamBullpenLast10(homeTeamId) : Promise.reject(),
+          awayTeamId ? fetchTeamSeasonStrikeoutProfile(awayTeamId, CURRENT_YEAR) : Promise.reject(),
+          homeTeamId ? fetchTeamSeasonStrikeoutProfile(homeTeamId, CURRENT_YEAR) : Promise.reject(),
+          gameId ? fetchEventLineup(gameId, awayTeamId) : Promise.reject(),
+          gameId ? fetchEventLineup(gameId, homeTeamId) : Promise.reject(),
+          gameId ? fetchGameUmpire(gameId) : Promise.reject()
         ]);
         const seasonAway = rAwayRes.status==='fulfilled' ? rAwayRes.value : { rpg: 0, rpgHome: 0, rpgAway: 0, games: 0 };
         const seasonHome = rHomeRes.status==='fulfilled' ? rHomeRes.value : { rpg: 0, rpgHome: 0, rpgAway: 0, games: 0 };
         const lastAway = kAwayRes.status==='fulfilled' ? kAwayRes.value : offAway;
         const lastHome = kHomeRes.status==='fulfilled' ? kHomeRes.value : offHome;
+        const seasonKAway = kSeasonAwayRes.status==='fulfilled' ? kSeasonAwayRes.value : { kRate: 0, kpg: 0 };
+        const seasonKHome = kSeasonHomeRes.status==='fulfilled' ? kSeasonHomeRes.value : { kRate: 0, kpg: 0 };
         teamAvgAway = avgAwayRes.status==='fulfilled' ? avgAwayRes.value : teamAvgAway;
         teamAvgHome = avgHomeRes.status==='fulfilled' ? avgHomeRes.value : teamAvgHome;
-        offAway = { ...lastAway, seasonRpg: seasonAway.rpg, seasonRpgHome: seasonAway.rpgHome, seasonRpgAway: seasonAway.rpgAway };
-        offHome = { ...lastHome, seasonRpg: seasonHome.rpg, seasonRpgHome: seasonHome.rpgHome, seasonRpgAway: seasonHome.rpgAway };
+        offAway = { ...lastAway, seasonRpg: seasonAway.rpg, seasonRpgHome: seasonAway.rpgHome, seasonRpgAway: seasonAway.rpgAway, seasonKRateCurrent: seasonKAway.kRate || 0, seasonKpgCurrent: seasonKAway.kpg || 0 };
+        offHome = { ...lastHome, seasonRpg: seasonHome.rpg, seasonRpgHome: seasonHome.rpgHome, seasonRpgAway: seasonHome.rpgAway, seasonKRateCurrent: seasonKHome.kRate || 0, seasonKpgCurrent: seasonKHome.kpg || 0 };
         var penAway = penAwayRes.status==='fulfilled' ? penAwayRes.value : {era:0,whip:0,k9:0,ipPerGame:0};
         var penHome = penHomeRes.status==='fulfilled' ? penHomeRes.value : {era:0,whip:0,k9:0,ipPerGame:0};
-      } catch (_) {}
+        lineupAway = luAwayRes.status==='fulfilled' ? luAwayRes.value : lineupAway;
+        lineupHome = luHomeRes.status==='fulfilled' ? luHomeRes.value : lineupHome;
+        var umpire = umpRes.status==='fulfilled' ? umpRes.value : { name: null, kZone: 1.0 };
+      } catch (_) { var umpire = { name: null, kZone: 1.0 }; }
       const awayAttackContext = (offAway.seasonRpgAway * 0.45) + (offAway.rpg * 0.3) + (offAway.hpg * 0.08) + (offAway.hotScore * 0.07) + (teamAvgAway.avg * 12);
       const homeAttackContext = (offHome.seasonRpgHome * 0.45) + (offHome.rpg * 0.3) + (offHome.hpg * 0.08) + (offHome.hotScore * 0.07) + (teamAvgHome.avg * 12);
       let overUnderSignal = (A.avgR + H.avgR)*0.45 + (awayAttackContext + homeAttackContext)*0.55;
       if (!isIndoor && !isNaN(tempF)) {
         if (tempF >= 85) overUnderSignal += 0.5;
         if (tempF <= 55) overUnderSignal -= 0.5;
+      }
+      // 2.4: Wind direction parsing and O/U adjustment
+      const windRaw = btn?.dataset.wind || '';
+      const windMatch = String(windRaw).match(/(\d+\.?\d*)\s*mph/i);
+      const windMph = windMatch ? Number(windMatch[1]) : 0;
+      const windDir = (/out/i.test(windRaw)) ? 'out' : (/in/i.test(windRaw)) ? 'in' : 'cross';
+      if (!isIndoor && windMph >= 8) {
+        if (windDir === 'out') overUnderSignal += 0.45;
+        else if (windDir === 'in') overUnderSignal -= 0.30;
       }
       const pf = getParkFactor(venueName);
       overUnderSignal *= pf;
@@ -2487,15 +2718,23 @@
         else if (pUnder >= 0.61) ouPick = {side:'Under', badge:'strong', p: pUnder};
         else if (pUnder >= 0.56) ouPick = {side:'Under', badge:'lean', p: pUnder};
       }
-      if (!ouPick && !isNaN(ouLine)) {
-        const side = mu >= ouLine ? 'Over' : 'Under';
-        const p = side === 'Over' ? pOver : pUnder;
-        ouPick = { side, badge: 'lean', p: isNaN(p) ? undefined : p };
-      }
+      // 1.3: No catch-all O/U — only generate pick when probability threshold is met
       const mlPick = (() => {
-        if (strength < 0.6) return null;
+        // 1.3: Raised minimum edge from 0.6 to 0.8
+        if (strength < 0.8) return null;
         const side = better === 'home' ? homeAbr : awayAbr;
-        const badge = strength >= 1.6 ? 'strong' : 'lean';
+        let badge = strength >= 1.8 ? 'strong' : 'lean';
+        // 1.3: Bullpen penalty — if favored team has bad bullpen, downgrade
+        const favoredPen = better === 'home' ? penHome : penAway;
+        const oppPen = better === 'home' ? penAway : penHome;
+        if (favoredPen.whip > 0 && favoredPen.whip >= 1.45 && favoredPen.era >= 4.50) {
+          badge = 'lean'; // downgrade strong→lean if bullpen is poor
+        }
+        // 1.3: If opponent bullpen is elite and edge is marginal, skip
+        if (oppPen.whip > 0 && oppPen.whip <= 1.15 && strength < 1.2) return null;
+        // 2.1: If lineup not confirmed for favored team, max confidence = lean
+        const favoredLineup = better === 'home' ? lineupHome : lineupAway;
+        if (!favoredLineup.confirmed && badge === 'strong') badge = 'lean';
         return {side, badge, better};
       })();
       const lastName = (full) => (full||'').split(' ').slice(-1)[0] || '';
@@ -2507,11 +2746,26 @@
       const isHomeLHP = /LHP/i.test(homeThrows);
       const oppVsHandAwayPitch = isAwayLHP ? Number(offHome.rpgVsL||NaN) : Number(offHome.rpgVsR||NaN);
       const oppVsHandHomePitch = isHomeLHP ? Number(offAway.rpgVsL||NaN) : Number(offAway.rpgVsR||NaN);
+      const teamStrikeoutSignal = (offense, handRate) => {
+        const recentRate = Number(handRate || offense.kRate || 0);
+        const seasonRate = Number(offense.seasonKRateCurrent || 0);
+        const seasonKpg = Number(offense.seasonKpgCurrent || 0);
+        const kpgAdj = Math.max(-0.018, Math.min(0.018, (seasonKpg - 8.4) * 0.004));
+        if (recentRate > 0 && seasonRate > 0) return (recentRate * 0.65) + (seasonRate * 0.35) + kpgAdj;
+        if (recentRate > 0) return recentRate + kpgAdj;
+        if (seasonRate > 0) return seasonRate + kpgAdj;
+        return Number(offense.kRate || 0);
+      };
       const kPickAway = (() => {
         if (!awayId) return null;
-        const oppKRate = isHomeLHP ? Number(offHome.kRateVsL||offHome.kRate||0) : Number(offHome.kRateVsR||offHome.kRate||0);
+        const oppKRate = teamStrikeoutSignal(offHome, isHomeLHP ? Number(offHome.kRateVsL||offHome.kRate||0) : Number(offHome.kRateVsR||offHome.kRate||0));
         const splitBoost = Math.max(awaySplit.k9VsL, awaySplit.k9VsR) >= 10 ? 0.3 : 0;
-        const kAvg = awayContext.avgK + splitBoost;
+        let kAvg = awayContext.avgK + splitBoost;
+        // 2.2: Umpire K-zone adjustment
+        if (umpire.kZone !== 1.0) kAvg *= umpire.kZone;
+        // 2.3: Rest day K adjustment
+        if (restDaysAway != null && restDaysAway >= 6) kAvg -= 0.3; // rust
+        if (restDaysAway != null && restDaysAway <= 3) kAvg -= 0.5; // short rest
         const line = normalizePropLine(kAvg);
         if (kAvg >= 6.8 && oppKRate >= 0.26) return {which:`K ${awayLast}`, market:'K', subject: awayLast, side:'Over', line, badge: awayContext.preferred.n >= 3 ? 'strong' : 'lean'};
         if (kAvg >= 6.0 && oppKRate >= 0.24) return {which:`K ${awayLast}`, market:'K', subject: awayLast, side:'Over', line, badge:'lean'};
@@ -2520,9 +2774,14 @@
       })();
       const kPickHome = (() => {
         if (!homeId) return null;
-        const oppKRate = isAwayLHP ? Number(offAway.kRateVsL||offAway.kRate||0) : Number(offAway.kRateVsR||offAway.kRate||0);
+        const oppKRate = teamStrikeoutSignal(offAway, isAwayLHP ? Number(offAway.kRateVsL||offAway.kRate||0) : Number(offAway.kRateVsR||offAway.kRate||0));
         const splitBoost = Math.max(homeSplit.k9VsL, homeSplit.k9VsR) >= 10 ? 0.3 : 0;
-        const kAvg = homeContext.avgK + splitBoost;
+        let kAvg = homeContext.avgK + splitBoost;
+        // 2.2: Umpire K-zone adjustment
+        if (umpire.kZone !== 1.0) kAvg *= umpire.kZone;
+        // 2.3: Rest day K adjustment
+        if (restDaysHome != null && restDaysHome >= 6) kAvg -= 0.3;
+        if (restDaysHome != null && restDaysHome <= 3) kAvg -= 0.5;
         const line = normalizePropLine(kAvg);
         if (kAvg >= 6.8 && oppKRate >= 0.26) return {which:`K ${homeLast}`, market:'K', subject: homeLast, side:'Over', line, badge: homeContext.preferred.n >= 3 ? 'strong' : 'lean'};
         if (kAvg >= 6.0 && oppKRate >= 0.24) return {which:`K ${homeLast}`, market:'K', subject: homeLast, side:'Over', line, badge:'lean'};
@@ -2531,20 +2790,30 @@
       })();
       const ipPickAway = (() => {
         if (!awayId) return null;
-        const ip = awayContext.avgIP || A.avgIP;
+        let ip = awayContext.avgIP || A.avgIP;
+        // 2.3: Rest day IP adjustment
+        if (restDaysAway != null && restDaysAway <= 3) ip -= 0.4; // short rest = less IP
+        if (restDaysAway != null && restDaysAway >= 7) ip -= 0.2; // extended rest = slightly less IP
         const homeAtkAdj = isNaN(oppVsHandAwayPitch) ? homeAttackContext : (homeAttackContext*0.6 + oppVsHandAwayPitch*0.4);
+        const runsPenalty = awayContext.avgR >= 3.7 ? 0.35 : awayContext.avgR >= 3.1 ? 0.15 : awayContext.avgR <= 2.2 ? -0.15 : 0;
+        const ipAdj = ip - runsPenalty;
         const line = normalizePropLine(ip);
-        if (ip >= 6.0 && homeAtkAdj <= 4.9) return {which:`IP ${awayLast}`, market:'IP', subject: awayLast, side:'Over', line, badge: awayContext.preferred.n >= 3 ? 'strong' : 'lean'};
-        if (ip <= 5.0 && homeAtkAdj >= 5.6) return {which:`IP ${awayLast}`, market:'IP', subject: awayLast, side:'Under', line, badge:'lean'};
+        if (ipAdj >= 6.0 && homeAtkAdj <= 4.9) return {which:`IP ${awayLast}`, market:'IP', subject: awayLast, side:'Over', line, badge: awayContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (ipAdj <= 5.0 && (homeAtkAdj >= 5.6 || awayContext.avgR >= 3.5)) return {which:`IP ${awayLast}`, market:'IP', subject: awayLast, side:'Under', line, badge:'lean'};
         return null;
       })();
       const ipPickHome = (() => {
         if (!homeId) return null;
-        const ip = homeContext.avgIP || H.avgIP;
+        let ip = homeContext.avgIP || H.avgIP;
+        // 2.3: Rest day IP adjustment
+        if (restDaysHome != null && restDaysHome <= 3) ip -= 0.4;
+        if (restDaysHome != null && restDaysHome >= 7) ip -= 0.2;
         const awayAtkAdj = isNaN(oppVsHandHomePitch) ? awayAttackContext : (awayAttackContext*0.6 + oppVsHandHomePitch*0.4);
+        const runsPenalty = homeContext.avgR >= 3.7 ? 0.35 : homeContext.avgR >= 3.1 ? 0.15 : homeContext.avgR <= 2.2 ? -0.15 : 0;
+        const ipAdj = ip - runsPenalty;
         const line = normalizePropLine(ip);
-        if (ip >= 6.0 && awayAtkAdj <= 4.9) return {which:`IP ${homeLast}`, market:'IP', subject: homeLast, side:'Over', line, badge: homeContext.preferred.n >= 3 ? 'strong' : 'lean'};
-        if (ip <= 5.0 && awayAtkAdj >= 5.6) return {which:`IP ${homeLast}`, market:'IP', subject: homeLast, side:'Under', line, badge:'lean'};
+        if (ipAdj >= 6.0 && awayAtkAdj <= 4.9) return {which:`IP ${homeLast}`, market:'IP', subject: homeLast, side:'Over', line, badge: homeContext.preferred.n >= 3 ? 'strong' : 'lean'};
+        if (ipAdj <= 5.0 && (awayAtkAdj >= 5.6 || homeContext.avgR >= 3.5)) return {which:`IP ${homeLast}`, market:'IP', subject: homeLast, side:'Under', line, badge:'lean'};
         return null;
       })();
       const row = panelEl.querySelector('#advice-row');
@@ -2562,6 +2831,32 @@
         const sPenHome = penScore(penHome);
         const bestPen = (!isNaN(sPenAway) && !isNaN(sPenHome)) ? (sPenAway > sPenHome ? 'away' : 'home') : null;
         if (bestPen) pills.push(`<span class="advice-pill">Bullpen mejor: ${bestPen==='home'?homeAbr:awayAbr} ★</span>`);
+        // 2.1: Lineup status pills
+        const luPill = (abr, lu) => lu.confirmed
+          ? `<span class="advice-pill" style="border-color:#22c55e">✅ Lineup ${abr} (${lu.hitterCount})</span>`
+          : `<span class="advice-pill" style="border-color:#f59e0b">⏳ Lineup ${abr} pendiente</span>`;
+        pills.push(luPill(awayAbr, lineupAway));
+        pills.push(luPill(homeAbr, lineupHome));
+        // 2.3: Rest days pills
+        const restPill = (abr, days) => {
+          if (days == null) return '';
+          const label = days <= 3 ? `⚠️ ${abr} ${days}d desc (corto)` : days >= 6 ? `⚠️ ${abr} ${days}d desc (óxido)` : `${abr} ${days}d desc`;
+          const color = (days <= 3 || days >= 6) ? 'border-color:#ef4444' : '';
+          return `<span class="advice-pill" ${color ? `style="${color}"` : ''}>${label}</span>`;
+        };
+        if (restDaysAway != null) pills.push(restPill(awayAbr, restDaysAway));
+        if (restDaysHome != null) pills.push(restPill(homeAbr, restDaysHome));
+        // 2.4: Wind pill
+        if (!isIndoor && windMph >= 5) {
+          const windLabel = windDir === 'out' ? '💨 Viento Out' : windDir === 'in' ? '💨 Viento In' : '💨 Viento Cross';
+          pills.push(`<span class="advice-pill">${windLabel} ${windMph}mph</span>`);
+        }
+        // 2.2: Umpire pill
+        if (umpire.name) {
+          const kz = umpire.kZone;
+          const umpLabel = kz >= 1.04 ? '🟢 Zona amplia' : kz <= 0.96 ? '🔴 Zona estrecha' : '⚪ Zona normal';
+          pills.push(`<span class="advice-pill">⚖️ ${umpire.name} ${umpLabel}</span>`);
+        }
         if (mlPick) {
           advicePickMeta.push({ key: `ML ${mlPick.side}`, badge: mlPick.badge, score: 0.50 + Math.min(strength / 10, 0.2) });
           pills.push(`<span class="advice-pill" data-pick-key="ML ${mlPick.side}">ML ${mlPick.side} <span class="advice-badge ${mlPick.badge}">${mlPick.badge==='strong'?'Fuerte':'Leve'}</span></span>`);
@@ -2621,7 +2916,7 @@
         if (explEl) {
           const parts = [];
           if (mlPick) {
-            parts.push(`ML ${mlPick.side}: ventaja por perfil del abridor usando 2025+2026, con peso fuerte al split del día (${awayAbr} visitante IP ${awayContext.avgIP.toFixed(1)} / WHIP ${awayContext.whip.toFixed(2)}; ${homeAbr} local IP ${homeContext.avgIP.toFixed(1)} / WHIP ${homeContext.whip.toFixed(2)}; K/BB ${awayAbr} ${A.kbb.toFixed(2)} · ${homeAbr} ${H.kbb.toFixed(2)}).`);
+            parts.push(`ML ${mlPick.side}: ventaja por perfil del abridor usando 2025+2026, con peso fuerte al split del día (${awayAbr} visitante IP ${awayContext.avgIP.toFixed(1)} / WHIP ${awayContext.whip.toFixed(2)} / R permitidas ${awayContext.avgR.toFixed(1)}; ${homeAbr} local IP ${homeContext.avgIP.toFixed(1)} / WHIP ${homeContext.whip.toFixed(2)} / R permitidas ${homeContext.avgR.toFixed(1)}; K/BB ${awayAbr} ${A.kbb.toFixed(2)} · ${homeAbr} ${H.kbb.toFixed(2)}).`);
           }
           if (ouPick && !isNaN(ouLine)) {
             const wx = (!isIndoor && !isNaN(tempF)) ? `, clima ${tempF}°F` : '';
@@ -2648,12 +2943,12 @@
           if (kPickAway || kPickHome) {
             const kp = [];
             if (kPickAway) {
-              const oppRate = isHomeLHP ? (offHome.kRateVsL||offHome.kRate||0) : (offHome.kRateVsR||offHome.kRate||0);
-              kp.push(`${kPickAway.which} ${kPickAway.side} (K visita ${(awayContext.avgK + (awayContext.kSplitAdj||0)).toFixed(1)} · kRate ${homeAbr} ${(oppRate*100).toFixed(0)}%)`);
+              const oppRate = teamStrikeoutSignal(offHome, isHomeLHP ? (offHome.kRateVsL||offHome.kRate||0) : (offHome.kRateVsR||offHome.kRate||0));
+              kp.push(`${kPickAway.which} ${kPickAway.side} (K visita ${(awayContext.avgK + (awayContext.kSplitAdj||0)).toFixed(1)} · K% rival ${homeAbr} ${(oppRate*100).toFixed(0)}% · K/J 2026 ${(offHome.seasonKpgCurrent||0).toFixed(1)})`);
             }
             if (kPickHome) {
-              const oppRate = isAwayLHP ? (offAway.kRateVsL||offAway.kRate||0) : (offAway.kRateVsR||offAway.kRate||0);
-              kp.push(`${kPickHome.which} ${kPickHome.side} (K casa ${(homeContext.avgK + (homeContext.kSplitAdj||0)).toFixed(1)} · kRate ${awayAbr} ${(oppRate*100).toFixed(0)}%)`);
+              const oppRate = teamStrikeoutSignal(offAway, isAwayLHP ? (offAway.kRateVsL||offAway.kRate||0) : (offAway.kRateVsR||offAway.kRate||0));
+              kp.push(`${kPickHome.which} ${kPickHome.side} (K casa ${(homeContext.avgK + (homeContext.kSplitAdj||0)).toFixed(1)} · K% rival ${awayAbr} ${(oppRate*100).toFixed(0)}% · K/J 2026 ${(offAway.seasonKpgCurrent||0).toFixed(1)})`);
             }
             parts.push(kp.join(' · '));
           }
@@ -2661,11 +2956,11 @@
             const ipt = [];
             if (ipPickAway) {
               const vsHandStr = isNaN(oppVsHandAwayPitch) ? '' : `, vs mano ${isAwayLHP?'L':'R'} ${homeAbr} ${oppVsHandAwayPitch.toFixed(1)}`;
-              ipt.push(`${ipPickAway.which} ${ipPickAway.side} (IP visita ${awayContext.avgIP.toFixed(1)} vs ataque ${homeAbr} ${homeAttackContext.toFixed(1)}${vsHandStr})`);
+              ipt.push(`${ipPickAway.which} ${ipPickAway.side} (IP visita ${awayContext.avgIP.toFixed(1)} · R permitidas ${awayContext.avgR.toFixed(1)} vs ataque ${homeAbr} ${homeAttackContext.toFixed(1)}${vsHandStr})`);
             }
             if (ipPickHome) {
               const vsHandStr = isNaN(oppVsHandHomePitch) ? '' : `, vs mano ${isHomeLHP?'L':'R'} ${awayAbr} ${oppVsHandHomePitch.toFixed(1)}`;
-              ipt.push(`${ipPickHome.which} ${ipPickHome.side} (IP casa ${homeContext.avgIP.toFixed(1)} vs ataque ${awayAbr} ${awayAttackContext.toFixed(1)}${vsHandStr})`);
+              ipt.push(`${ipPickHome.which} ${ipPickHome.side} (IP casa ${homeContext.avgIP.toFixed(1)} · R permitidas ${homeContext.avgR.toFixed(1)} vs ataque ${awayAbr} ${awayAttackContext.toFixed(1)}${vsHandStr})`);
             }
             parts.push(ipt.join(' · '));
           }
@@ -2699,7 +2994,14 @@
         odds: { mlAway: isNaN(mlAway)?null:mlAway, mlHome: isNaN(mlHome)?null:mlHome, total: isNaN(ouLine)?null:ouLine, novig: { away: isNaN(pNoVig.away)?null:pNoVig.away, home: isNaN(pNoVig.home)?null:pNoVig.home } },
         weather: { tempF: isNaN(tempF)?null:tempF, indoor: !!isIndoor, windMph: (()=>{ const w = btn?.dataset.wind || ''; const m = String(w).match(/(\\d+\\.?\\d*)\\s*mph/i); return m ? Number(m[1]) : null; })() },
         market: { mlOpen: { away: isNaN(mlAwayOpen)?null:mlAwayOpen, home: isNaN(mlHomeOpen)?null:mlHomeOpen }, mlClose: { away: isNaN(mlAway)?null:mlAway, home: isNaN(mlHome)?null:mlHome }, ouOpen: isNaN(ouOpen)?null:ouOpen, ouClose: isNaN(ouLine)?null:ouLine, move: { mlAway: isNaN(moveMlAway)?null:moveMlAway, mlHome: isNaN(moveMlHome)?null:moveMlHome, total: isNaN(moveOu)?null:moveOu } },
-        venue: { name: venueName, parkFactor: Number(pf||1) }
+        venue: { name: venueName, parkFactor: Number(pf||1) },
+        lineup: {
+          away: { confirmed: lineupAway.confirmed, hitters: lineupAway.hitterCount, names: lineupAway.names.slice(0, 9) },
+          home: { confirmed: lineupHome.confirmed, hitters: lineupHome.hitterCount, names: lineupHome.names.slice(0, 9) }
+        },
+        restDays: { away: restDaysAway, home: restDaysHome },
+        wind: { mph: windMph, direction: windDir },
+        umpire: { name: umpire.name || null, kZone: umpire.kZone }
       };
       }
     } catch (_) {}

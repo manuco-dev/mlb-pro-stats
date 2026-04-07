@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Backtesting Dashboard - Sistema Mejorado</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --card-bg: #111827;
+      --card-border: rgba(148,163,184,0.18);
+      --pill-bg: #0f172a;
+      --inner-bg: #0f172a;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --danger: #ef4444;
+    }
+    body.light {
+      --bg: #f8fafc;
+      --text: #0f172a;
+      --muted: #64748b;
+      --card-bg: #ffffff;
+      --card-border: rgba(15,23,42,0.10);
+      --pill-bg: #f8fafc;
+      --inner-bg: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 2.5rem 1rem;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      max-width: 1200px;
+      margin: 0 auto 1.4rem;
+      text-align: center;
+      position: relative;
+    }
+    .header-actions {
+      position: absolute;
+      top: 0.5rem;
+      left: 0;
+      display: flex;
+      gap: 8px;
+    }
+    .header-link, .theme-toggle, .refresh-btn {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+    }
+    .theme-toggle {
+      position: absolute;
+      top: 0.5rem;
+      right: 0;
+    }
+    header h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin: 0;
+      background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p {
+      color: var(--muted);
+      margin-top: 0.5rem;
+      font-size: 0.92rem;
+    }
+    .section {
+      max-width: 1200px;
+      margin: 0 auto 1rem;
+      border: 1px solid var(--card-border);
+      background: var(--inner-bg);
+      border-radius: 12px;
+      padding: 0.95rem 1rem;
+    }
+    .toolbar {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 0.9rem;
+      flex-wrap: wrap;
+    }
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toolbar-group label {
+      font-size: 0.82rem;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .toolbar-select {
+      background: var(--card-bg);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 6px 10px;
+      font-size: 0.82rem;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 1rem;
+    }
+    .stat-card {
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      background: var(--pill-bg);
+      padding: 0.9rem;
+    }
+    .stat-card .label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.35rem;
+      font-weight: 800;
+    }
+    .stat-card .value {
+      font-size: 1.8rem;
+      font-weight: 900;
+      color: var(--text);
+      line-height: 1;
+    }
+    .stat-card .value.success { color: var(--success); }
+    .stat-card .value.danger { color: var(--danger); }
+    .stat-card .meta {
+      margin-top: 0.45rem;
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+    .section-title {
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 1.2rem 0 0.8rem;
+    }
+    .patterns-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 10px;
+    }
+    .pattern-card {
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      background: var(--pill-bg);
+      padding: 0.8rem;
+    }
+    .pattern-card .pattern-name {
+      font-size: 0.88rem;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 0.4rem;
+    }
+    .pattern-card .pattern-stats {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 0.4rem;
+    }
+    .pattern-stat {
+      font-size: 0.76rem;
+      color: var(--muted);
+    }
+    .pattern-stat strong {
+      color: var(--text);
+      font-weight: 800;
+    }
+    .pattern-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 800;
+    }
+    .pattern-badge.success {
+      background: rgba(34,197,94,0.16);
+      color: var(--success);
+      border: 1px solid rgba(34,197,94,0.28);
+    }
+    .pattern-badge.danger {
+      background: rgba(239,68,68,0.16);
+      color: var(--danger);
+      border: 1px solid rgba(239,68,68,0.28);
+    }
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--card-border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty {
+      text-align: center;
+      padding: 2rem;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    @media (max-width: 760px) {
+      .header-actions, .theme-toggle {
+        position: static;
+        margin-top: 0.6rem;
+      }
+      header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-actions">
+      <a class="header-link" href="./">⬅ Volver a partidos</a>
+      <a class="header-link" href="./dashboard.html">📊 Dashboard picks</a>
+    </div>
+    <h1>🧪 Backtesting Dashboard</h1>
+    <p>Análisis de rendimiento histórico del sistema mejorado de picks</p>
+    <button id="theme-toggle" class="theme-toggle">🌙 Modo oscuro</button>
+  </header>
+
+  <section class="section">
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <label for="days-select">Período:</label>
+        <select id="days-select" class="toolbar-select">
+          <option value="7">Últimos 7 días</option>
+          <option value="14">Últimos 14 días</option>
+          <option value="30" selected>Últimos 30 días</option>
+          <option value="60">Últimos 60 días</option>
+          <option value="90">Últimos 90 días</option>
+        </select>
+      </div>
+      <button id="refresh-btn" class="refresh-btn">🔄 Actualizar</button>
+    </div>
+
+    <div id="content">
+      <div class="empty"><span class="spinner"></span> Cargando datos de backtesting...</div>
+    </div>
+  </section>
+
+  <script>
+    function esc(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    async function loadBacktest() {
+      const content = document.getElementById('content');
+      const daysSelect = document.getElementById('days-select');
+      const days = daysSelect.value;
+
+      content.innerHTML = '<div class="empty"><span class="spinner"></span> Cargando datos de backtesting...</div>';
+
+      try {
+        const response = await fetch(`/api/backtest?days=${days}`);
+        const data = await response.json();
+
+        if (!data.ok) {
+          content.innerHTML = `<div class="empty">⚠️ ${esc(data.message || data.error || 'Error desconocido')}</div>`;
+          return;
+        }
+
+        if (data.totalPicks === 0) {
+          content.innerHTML = '<div class="empty">📭 No hay picks en este período. Empieza a usar el sistema para ver estadísticas.</div>';
+          return;
+        }
+
+        const winRate = data.winRate !== null ? (data.winRate * 100).toFixed(1) : 'N/A';
+        const roi = data.roi !== null ? (data.roi * 100).toFixed(1) : 'N/A';
+        const winRateClass = data.winRate >= 0.58 ? 'success' : data.winRate >= 0.52 ? '' : 'danger';
+        const roiClass = data.roi >= 0.10 ? 'success' : data.roi >= 0.05 ? '' : 'danger';
+
+        let html = `
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="label">Total Picks</div>
+              <div class="value">${data.totalPicks}</div>
+              <div class="meta">Evaluados: ${data.graded}</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Win Rate</div>
+              <div class="value ${winRateClass}">${winRate}%</div>
+              <div class="meta">${data.wins}W - ${data.losses}L - ${data.pushes}P</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">ROI</div>
+              <div class="value ${roiClass}">${roi}%</div>
+              <div class="meta">Retorno sobre inversión</div>
+            </div>
+            <div class="stat-card">
+              <div class="label">Pendientes</div>
+              <div class="value">${data.ungraded}</div>
+              <div class="meta">Sin liquidar</div>
+            </div>
+          </div>
+        `;
+
+        // Por mercado
+        if (data.byMarket && Object.keys(data.byMarket).length > 0) {
+          html += '<div class="section-title">📊 Rendimiento por Mercado</div>';
+          html += '<div class="stats-grid">';
+          for (const [market, stats] of Object.entries(data.byMarket)) {
+            const mWinRate = stats.winRate !== null ? (stats.winRate * 100).toFixed(1) : 'N/A';
+            const mRoi = stats.roi !== null ? (stats.roi * 100).toFixed(1) : 'N/A';
+            const mWinRateClass = stats.winRate >= 0.58 ? 'success' : stats.winRate >= 0.52 ? '' : 'danger';
+            html += `
+              <div class="stat-card">
+                <div class="label">${esc(market)}</div>
+                <div class="value ${mWinRateClass}">${mWinRate}%</div>
+                <div class="meta">${stats.wins}W - ${stats.losses}L · ROI ${mRoi}%</div>
+              </div>
+            `;
+          }
+          html += '</div>';
+        }
+
+        // Por confianza
+        if (data.byConfidence && Object.keys(data.byConfidence).length > 0) {
+          html += '<div class="section-title">🎯 Rendimiento por Confianza</div>';
+          html += '<div class="stats-grid">';
+          for (const [confidence, stats] of Object.entries(data.byConfidence)) {
+            const cWinRate = stats.winRate !== null ? (stats.winRate * 100).toFixed(1) : 'N/A';
+            const cRoi = stats.roi !== null ? (stats.roi * 100).toFixed(1) : 'N/A';
+            const cWinRateClass = stats.winRate >= 0.65 ? 'success' : stats.winRate >= 0.52 ? '' : 'danger';
+            html += `
+              <div class="stat-card">
+                <div class="label">${esc(confidence).toUpperCase()}</div>
+                <div class="value ${cWinRateClass}">${cWinRate}%</div>
+                <div class="meta">${stats.wins}W - ${stats.losses}L · ROI ${cRoi}%</div>
+              </div>
+            `;
+          }
+          html += '</div>';
+        }
+
+        // Mejores patrones
+        if (data.patterns?.best?.length > 0) {
+          html += '<div class="section-title">✅ Mejores Patrones (Win Rate >60%)</div>';
+          html += '<div class="patterns-grid">';
+          for (const pattern of data.patterns.best) {
+            html += `
+              <div class="pattern-card">
+                <div class="pattern-name">${esc(pattern.pattern)}</div>
+                <div class="pattern-stats">
+                  <span class="pattern-stat"><strong>${pattern.winRate}</strong> win rate</span>
+                  <span class="pattern-stat"><strong>${pattern.record}</strong></span>
+                  <span class="pattern-stat"><strong>${pattern.roi}</strong> ROI</span>
+                </div>
+                <span class="pattern-badge success">${pattern.sample} picks</span>
+              </div>
+            `;
+          }
+          html += '</div>';
+        }
+
+        // Peores patrones
+        if (data.patterns?.worst?.length > 0) {
+          html += '<div class="section-title">⚠️ Peores Patrones (Win Rate <45%)</div>';
+          html += '<div class="patterns-grid">';
+          for (const pattern of data.patterns.worst) {
+            html += `
+              <div class="pattern-card">
+                <div class="pattern-name">${esc(pattern.pattern)}</div>
+                <div class="pattern-stats">
+                  <span class="pattern-stat"><strong>${pattern.winRate}</strong> win rate</span>
+                  <span class="pattern-stat"><strong>${pattern.record}</strong></span>
+                  <span class="pattern-stat"><strong>${pattern.roi}</strong> ROI</span>
+                </div>
+                <span class="pattern-badge danger">${pattern.sample} picks</span>
+              </div>
+            `;
+          }
+          html += '</div>';
+        }
+
+        content.innerHTML = html;
+
+      } catch (error) {
+        content.innerHTML = `<div class="empty">❌ Error: ${esc(error.message)}</div>`;
+      }
+    }
+
+    // Theme toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') document.body.classList.add('light');
+    if (themeToggle) {
+      const paint = () => {
+        themeToggle.textContent = document.body.classList.contains('light') ? '☀️ Modo claro' : '🌙 Modo oscuro';
+      };
+      paint();
+      themeToggle.addEventListener('click', () => {
+        document.body.classList.toggle('light');
+        localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+        paint();
+      });
+    }
+
+    // Event listeners
+    document.getElementById('days-select').addEventListener('change', loadBacktest);
+    document.getElementById('refresh-btn').addEventListener('click', loadBacktest);
+
+    // Load initial data
+    loadBacktest();
+  </script>
+</body>
+</html>

@@ -3,7 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node dev-server.js"
+    "dev": "node dev-server.js",
+    "test:enhanced": "node test-enhanced-picks.js",
+    "test": "node test-enhanced-picks.js",
+    "diagnostico": "node diagnostico-ia.js",
+    "check-db": "node check-database.js"
   },
   "dependencies": {
     "mongodb": "^6.17.0"
