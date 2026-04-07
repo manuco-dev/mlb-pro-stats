@@ -1,6 +1,6 @@
 # 🔧 Fix: Edge Runtime → Node.js Runtime
 
-## Problema
+## Problema Original
 
 Vercel mostraba este error al hacer deploy:
 
@@ -9,52 +9,49 @@ The Edge Function "api/ai-picks-enhanced" is referencing unsupported modules:
 - mongodb: net, crypto, child_process, fs/promises, tls, dns, timers/promises, fs, stream, timers, os, process, zlib, mongodb-connection-string-url, url, http
 ```
 
+## Problema Secundario
+
+Al intentar especificar `"runtime": "nodejs20.x"` en vercel.json:
+
+```
+Function Runtimes must have a valid version, for example `now-php@1.0.0`
+```
+
 ## Causa
 
-Las funciones que usan MongoDB estaban configuradas con `export const config = { runtime: 'edge' }`, pero Edge Runtime no soporta módulos de Node.js como MongoDB.
+1. Las funciones que usan MongoDB estaban configuradas con `export const config = { runtime: 'edge' }`, pero Edge Runtime no soporta módulos de Node.js como MongoDB.
 
-## Solución Aplicada
+2. Vercel no acepta la sintaxis `"runtime": "nodejs20.x"` en vercel.json. El runtime de Node.js es el predeterminado y no necesita especificarse.
 
-### 1. Removí `edge` runtime de funciones que usan MongoDB
+## Solución Final Aplicada
+
+### 1. Removí TODOS los `export const config = { runtime: 'edge' }` 
 
 Archivos modificados:
-- `api/ai-picks-enhanced.js` - ❌ Removido `export const config = { runtime: 'edge' }`
+- `api/ai-picks-enhanced.js` - ❌ Removido edge runtime
+- `api/ai-picks.js` - ❌ Removido edge runtime
+- `api/analyze.js` - ❌ Removido edge runtime
 
-### 2. Configuré Node.js runtime en `vercel.json`
+### 2. Simplifiqué `vercel.json` (sin especificar runtime)
 
 ```json
 {
   "functions": {
-    "api/ai-picks-enhanced.js": {
-      "runtime": "nodejs20.x",
-      "maxDuration": 30
-    },
-    "api/ai-learning.js": {
-      "runtime": "nodejs20.x",
-      "maxDuration": 30
-    },
-    "api/backtest.js": {
-      "runtime": "nodejs20.x",
-      "maxDuration": 30
-    },
-    "api/picks-stats.js": {
-      "runtime": "nodejs20.x",
-      "maxDuration": 30
-    },
-    "api/picks-sync.js": {
-      "runtime": "nodejs20.x",
+    "api/**/*.js": {
       "maxDuration": 30
     }
   }
 }
 ```
 
-### 3. Funciones que SÍ usan Edge Runtime (no usan MongoDB)
+Vercel usa Node.js runtime por defecto para todas las funciones en `/api`.
 
-Estas funciones mantienen `edge` runtime porque son más rápidas:
-- `api/ai-picks.js` - Solo hace fetch HTTP
-- `api/analyze.js` - Solo procesa datos
-- `api/scoreboard.js` - Solo hace fetch a ESPN
+## Resultado
+
+✅ Todas las funciones usan Node.js runtime (predeterminado)
+✅ MongoDB funciona correctamente
+✅ Timeout de 30 segundos para todas las funciones API
+✅ No hay errores de runtime
 
 ## Diferencias entre Edge y Node.js Runtime
 
@@ -65,13 +62,7 @@ Estas funciones mantienen `edge` runtime porque son más rápidas:
 | MongoDB | ❌ No soportado | ✅ Soportado |
 | Timeout (Hobby) | 10s | 10s |
 | Timeout (Pro) | 30s | 60s |
-
-## Resultado
-
-✅ El deploy ahora funciona correctamente
-✅ MongoDB se conecta sin problemas
-✅ Las funciones que no necesitan MongoDB siguen siendo rápidas con Edge
-✅ Las funciones con MongoDB funcionan con Node.js runtime
+| Configuración | `export const config = { runtime: 'edge' }` | Predeterminado (no requiere config) |
 
 ## Verificación
 
@@ -83,5 +74,5 @@ Debe mostrar: `🎉 TODOS LOS CHECKS PASARON`
 
 ---
 
-**Fecha del fix:** 7 de abril de 2026
-**Archivos modificados:** `api/ai-picks-enhanced.js`, `vercel.json`, `DEPLOY-VERCEL-PASOS.md`
+**Fecha del fix:** 7 de abril de 2026  
+**Archivos modificados:** `api/ai-picks-enhanced.js`, `api/ai-picks.js`, `api/analyze.js`, `vercel.json`

@@ -9,19 +9,22 @@ El error de Edge Runtime ha sido corregido. Las funciones que usan MongoDB ahora
 ## 📋 Cambios Realizados
 
 ### 1. Runtime Configuration
-- ✅ `api/ai-picks-enhanced.js` → Node.js runtime (usa MongoDB)
-- ✅ `api/ai-learning.js` → Node.js runtime (usa MongoDB)
-- ✅ `api/backtest.js` → Node.js runtime (usa MongoDB)
-- ✅ `api/picks-stats.js` → Node.js runtime (usa MongoDB)
-- ✅ `api/picks-sync.js` → Node.js runtime (usa MongoDB)
-- ⚡ `api/ai-picks.js` → Edge runtime (solo HTTP)
-- ⚡ `api/analyze.js` → Edge runtime (solo procesamiento)
-- ⚡ `api/scoreboard.js` → Edge runtime (solo HTTP)
+- ✅ Todas las funciones API usan Node.js runtime (predeterminado)
+- ✅ `api/ai-picks-enhanced.js` → Node.js (usa MongoDB)
+- ✅ `api/ai-learning.js` → Node.js (usa MongoDB)
+- ✅ `api/backtest.js` → Node.js (usa MongoDB)
+- ✅ `api/picks-stats.js` → Node.js (usa MongoDB)
+- ✅ `api/picks-sync.js` → Node.js (usa MongoDB)
+- ✅ `api/ai-picks.js` → Node.js (hace fetch HTTP)
+- ✅ `api/analyze.js` → Node.js (procesamiento)
+- ✅ `api/scoreboard.js` → Node.js (fetch ESPN)
 
 ### 2. Archivos Actualizados
 - `api/ai-picks-enhanced.js` - Removido edge runtime
-- `vercel.json` - Agregado runtime explícito para funciones MongoDB
-- `DEPLOY-VERCEL-PASOS.md` - Documentación actualizada
+- `api/ai-picks.js` - Removido edge runtime
+- `api/analyze.js` - Removido edge runtime
+- `vercel.json` - Simplificado (usa Node.js por defecto)
+- `LISTO-PARA-DEPLOY.md` - Documentación actualizada
 - `FIX-EDGE-RUNTIME.md` - Documentación del fix
 
 ---

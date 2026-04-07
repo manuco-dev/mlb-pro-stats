@@ -1,5 +1,3 @@
-export const config = { runtime: 'edge' };
-
 /* ── Helpers ──────────────────────────────────────────────── */
 async function fetchJson(url) {
   const r = await fetch(url);

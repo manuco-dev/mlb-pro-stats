@@ -1,5 +1,3 @@
-export const config = { runtime: 'edge' };
-
 /* ── Formatting helpers ──────────────────────────────────── */
 function num(v, d = 2) {
   const x = Number(v);
