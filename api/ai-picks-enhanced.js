@@ -1,5 +1,3 @@
-export const config = { runtime: 'edge' };
-
 /* ══════════════════════════════════════════════════════════
    FASE 1: Sistema mejorado de picks con IA
    - Datos H2H (head-to-head)

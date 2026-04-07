@@ -4,15 +4,23 @@
   "framework": null,
   "functions": {
     "api/backtest.js": {
+      "runtime": "nodejs20.x",
       "maxDuration": 30
     },
     "api/ai-learning.js": {
+      "runtime": "nodejs20.x",
       "maxDuration": 30
     },
     "api/picks-stats.js": {
+      "runtime": "nodejs20.x",
       "maxDuration": 30
     },
     "api/ai-picks-enhanced.js": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 30
+    },
+    "api/picks-sync.js": {
+      "runtime": "nodejs20.x",
       "maxDuration": 30
     }
   },
