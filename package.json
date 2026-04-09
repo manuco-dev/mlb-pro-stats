@@ -8,7 +8,8 @@
     "test": "node test-enhanced-picks.js",
     "diagnostico": "node diagnostico-ia.js",
     "check-db": "node check-database.js",
-    "pre-deploy": "node pre-deploy-check.js"
+    "pre-deploy": "node pre-deploy-check.js",
+    "analyze-winrate": "node analyze-winrate.js"
   },
   "dependencies": {
     "mongodb": "^6.17.0"

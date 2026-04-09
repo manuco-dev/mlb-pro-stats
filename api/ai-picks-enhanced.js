@@ -1,10 +1,20 @@
 /* ══════════════════════════════════════════════════════════
-   FASE 1: Sistema mejorado de picks con IA
+   FASE 2: Sistema mejorado con Top 5 factores profesionales
+   - Momentum del equipo (racha L10)
+   - Ventaja de local mejorada
+   - Sharp money tracking (RLM)
+   - Clima detallado (humedad, hora, viento)
+   - Splits avanzados del pitcher
+   
+   FASE 1: Sistema base
    - Datos H2H (head-to-head)
    - Sistema de confianza probabilística
    - Filtros de exclusión estrictos
    - Backtesting básico
    ══════════════════════════════════════════════════════════ */
+
+/* ── MERCADOS DESHABILITADOS (Win Rate <35%) ─────────────── */
+const DISABLED_MARKETS = ['K', 'IP']; // Desactivar hasta mejorar el modelo
 
 /* ── Formatting helpers ──────────────────────────────────── */
 function num(v, d = 2) {
@@ -79,9 +89,331 @@ async function fetchH2HData(awayTeamId, homeTeamId) {
   }
 }
 
-/* ── Calculate probability and edge ──────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   TOP 5 FACTORES PROFESIONALES
+   ══════════════════════════════════════════════════════════ */
+
+/* ── 1. MOMENTUM DEL EQUIPO (Racha L10) ──────────────────── */
+function getTeamMomentum(teamRecord) {
+  // teamRecord puede ser "7-3", "2-8", etc.
+  if (!teamRecord || typeof teamRecord !== 'string') {
+    return { status: 'NEUTRAL', factor: 1.0, wins: 5 };
+  }
+  
+  const parts = teamRecord.split('-');
+  if (parts.length !== 2) {
+    return { status: 'NEUTRAL', factor: 1.0, wins: 5 };
+  }
+  
+  const wins = parseInt(parts[0], 10);
+  const losses = parseInt(parts[1], 10);
+  
+  if (!Number.isFinite(wins) || !Number.isFinite(losses)) {
+    return { status: 'NEUTRAL', factor: 1.0, wins: 5 };
+  }
+  
+  // Hot team: 7+ wins en L10
+  if (wins >= 7) {
+    return { status: 'HOT', factor: 1.12, wins };
+  }
+  
+  // Cold team: 3 o menos wins en L10
+  if (wins <= 3) {
+    return { status: 'COLD', factor: 0.88, wins };
+  }
+  
+  // Warm team: 6 wins
+  if (wins === 6) {
+    return { status: 'WARM', factor: 1.05, wins };
+  }
+  
+  // Cool team: 4 wins
+  if (wins === 4) {
+    return { status: 'COOL', factor: 0.95, wins };
+  }
+  
+  return { status: 'NEUTRAL', factor: 1.0, wins };
+}
+
+/* ── 2. VENTAJA DE LOCAL MEJORADA ────────────────────────── */
+function getHomeFieldAdvantage(venueName, homeTeamAbr) {
+  let homeAdvantage = 1.08; // Base: 54% win rate local = 1.08 factor
+  
+  // Ajuste por estadio específico (ventaja extra)
+  const toughVenues = {
+    'Coors Field': 1.15,      // Colorado - altitud extrema
+    'Fenway Park': 1.12,      // Boston - Green Monster
+    'Wrigley Field': 1.10,    // Chicago - viento, historia
+    'Oracle Park': 1.09,      // SF - frío, viento, dimensiones
+    'Dodger Stadium': 1.09,   // LA - intimidante para visitantes
+    'Yankee Stadium': 1.10    // NY - presión, dimensiones
+  };
+  
+  if (venueName && toughVenues[venueName]) {
+    homeAdvantage = toughVenues[venueName];
+  }
+  
+  // Equipos con ventaja home especialmente fuerte
+  const strongHomeTeams = {
+    'COL': 1.18,  // Rockies: dominantes en casa por altitud
+    'BOS': 1.12,  // Red Sox: Fenway es único
+    'LAD': 1.10,  // Dodgers: excelentes en casa
+    'NYY': 1.10   // Yankees: presión del público
+  };
+  
+  if (homeTeamAbr && strongHomeTeams[homeTeamAbr]) {
+    homeAdvantage = Math.max(homeAdvantage, strongHomeTeams[homeTeamAbr]);
+  }
+  
+  return homeAdvantage;
+}
+
+/* ── 3. SHARP MONEY TRACKING (RLM) ───────────────────────── */
+function detectSharpMoney(marketMove, publicPercent) {
+  // Reverse Line Movement (RLM): línea se mueve opuesto al público
+  // Steam Move: movimiento súbito >15 puntos
+  
+  if (!marketMove) {
+    return { isSharp: false, type: 'NONE', side: null, confidence: 0 };
+  }
+  
+  const mlMoveAway = safeNum(marketMove.mlAway);
+  const mlMoveHome = safeNum(marketMove.mlHome);
+  const publicOnAway = safeNum(publicPercent?.away || 50);
+  
+  // RLM Detection
+  // Si >65% del público apuesta por away pero línea se mueve a favor de home
+  if (publicOnAway > 65 && mlMoveHome > 12) {
+    return {
+      isSharp: true,
+      type: 'RLM',
+      side: 'home',
+      confidence: 0.85,
+      message: `${publicOnAway.toFixed(0)}% público en away pero línea favorece home +${mlMoveHome} = SHARP en home`
+    };
+  }
+  
+  // Si <35% del público apuesta por away pero línea se mueve a favor de away
+  if (publicOnAway < 35 && mlMoveAway > 12) {
+    return {
+      isSharp: true,
+      type: 'RLM',
+      side: 'away',
+      confidence: 0.85,
+      message: `${publicOnAway.toFixed(0)}% público en away pero línea favorece away +${mlMoveAway} = SHARP en away`
+    };
+  }
+  
+  // Steam Move Detection (movimiento >15 puntos)
+  if (Math.abs(mlMoveAway) > 15) {
+    return {
+      isSharp: true,
+      type: 'STEAM',
+      side: mlMoveAway > 0 ? 'away' : 'home',
+      confidence: 0.70,
+      message: `Steam move de ${Math.abs(mlMoveAway).toFixed(0)} puntos hacia ${mlMoveAway > 0 ? 'away' : 'home'}`
+    };
+  }
+  
+  if (Math.abs(mlMoveHome) > 15) {
+    return {
+      isSharp: true,
+      type: 'STEAM',
+      side: mlMoveHome > 0 ? 'home' : 'away',
+      confidence: 0.70,
+      message: `Steam move de ${Math.abs(mlMoveHome).toFixed(0)} puntos hacia ${mlMoveHome > 0 ? 'home' : 'away'}`
+    };
+  }
+  
+  return { isSharp: false, type: 'NONE', side: null, confidence: 0 };
+}
+
+/* ── 4. CLIMA DETALLADO ──────────────────────────────────── */
+function getWeatherImpact(weather, wind, gameTime) {
+  const impact = {
+    totalAdjustment: 0,
+    hrAdjustment: 0,
+    kAdjustment: 0,
+    factors: []
+  };
+  
+  if (!weather) return impact;
+  
+  // Indoor = sin impacto climático
+  if (weather.indoor) {
+    impact.factors.push('Indoor: sin impacto climático');
+    return impact;
+  }
+  
+  const temp = safeNum(weather.tempF);
+  const windMph = safeNum(wind?.mph || weather.windMph);
+  const windDir = wind?.direction || weather.windDirection || 'cross';
+  
+  // Temperatura (impacto en vuelo de pelota)
+  if (temp > 85) {
+    impact.totalAdjustment += 0.6; // Aire caliente = pelota vuela más
+    impact.hrAdjustment += 0.4;
+    impact.factors.push(`Temp ${temp}°F (calor): +0.6 runs esperadas`);
+  } else if (temp < 55) {
+    impact.totalAdjustment -= 0.5; // Aire frío = pelota no vuela
+    impact.hrAdjustment -= 0.3;
+    impact.factors.push(`Temp ${temp}°F (frío): -0.5 runs esperadas`);
+  }
+  
+  // Humedad (si está disponible)
+  const humidity = safeNum(weather.humidity);
+  if (humidity > 70) {
+    impact.totalAdjustment -= 0.3; // Alta humedad = pelota pesada
+    impact.hrAdjustment -= 0.25;
+    impact.factors.push(`Humedad ${humidity}%: -0.3 runs (pelota pesada)`);
+  }
+  
+  // Hora del juego (día vs noche)
+  if (gameTime) {
+    try {
+      const hour = new Date(gameTime).getHours();
+      if (hour >= 13 && hour <= 16) {
+        // Juego de día = más runs (sol, calor, cansancio)
+        impact.totalAdjustment += 0.4;
+        impact.factors.push('Juego de día: +0.4 runs (sol, visibilidad)');
+      }
+    } catch (e) {
+      // Ignorar si gameTime no es válido
+    }
+  }
+  
+  // Viento (CRÍTICO para totales)
+  if (windMph >= 10) {
+    if (windDir === 'out' || windDir === 'Out') {
+      // Viento a favor = más HR, más runs
+      const windImpact = windMph >= 15 ? 1.0 : 0.6;
+      impact.totalAdjustment += windImpact;
+      impact.hrAdjustment += windImpact * 0.6;
+      impact.factors.push(`Viento ${windMph}mph OUT: +${windImpact.toFixed(1)} runs`);
+    } else if (windDir === 'in' || windDir === 'In') {
+      // Viento en contra = menos HR, menos runs
+      const windImpact = windMph >= 15 ? -0.8 : -0.5;
+      impact.totalAdjustment += windImpact;
+      impact.hrAdjustment += windImpact * 0.6;
+      impact.factors.push(`Viento ${windMph}mph IN: ${windImpact.toFixed(1)} runs`);
+    } else if (windMph >= 15) {
+      // Viento cruzado fuerte = impredecible, reduce confianza
+      impact.kAdjustment -= 0.3; // Más difícil para pitchers
+      impact.factors.push(`Viento ${windMph}mph CROSS: -0.3 K esperados`);
+    }
+  }
+  
+  return impact;
+}
+
+/* ── 5. SPLITS AVANZADOS DEL PITCHER ─────────────────────── */
+function getAdvancedPitcherSplits(pitcher, opposingOffense, gameData) {
+  const adjustments = {
+    kAdjustment: 0,
+    ipAdjustment: 0,
+    eraAdjustment: 0,
+    probabilityMultiplier: 1.0,
+    factors: []
+  };
+  
+  if (!pitcher) return adjustments;
+  
+  // Split home/away (ya lo tienes, pero vamos a usarlo mejor)
+  const isHome = gameData.pitchers?.home?.name === pitcher.name;
+  const contextWhip = safeNum(pitcher.contextWhip);
+  const baseWhip = safeNum(pitcher.whip);
+  
+  if (contextWhip > 0 && baseWhip > 0) {
+    const whipDiff = contextWhip - baseWhip;
+    if (Math.abs(whipDiff) > 0.15) {
+      // Diferencia significativa en split
+      if (whipDiff > 0.15) {
+        // Peor en este contexto
+        adjustments.eraAdjustment += 0.5;
+        adjustments.ipAdjustment -= 0.5;
+        adjustments.probabilityMultiplier *= 0.93;
+        adjustments.factors.push(`WHIP contextual peor (+${whipDiff.toFixed(2)}): pitcher vulnerable`);
+      } else {
+        // Mejor en este contexto
+        adjustments.eraAdjustment -= 0.3;
+        adjustments.ipAdjustment += 0.3;
+        adjustments.probabilityMultiplier *= 1.07;
+        adjustments.factors.push(`WHIP contextual mejor (${whipDiff.toFixed(2)}): pitcher dominante`);
+      }
+    }
+  }
+  
+  // Rival ofensivo (vs LHP/RHP si está disponible)
+  const pitcherHand = pitcher.hand || 'R'; // Asumir derecho si no hay dato
+  const oppRpgVsHand = pitcherHand === 'L' 
+    ? safeNum(opposingOffense?.rpgVsL)
+    : safeNum(opposingOffense?.rpgVsR);
+  
+  if (oppRpgVsHand > 0) {
+    const oppRpgGeneral = safeNum(opposingOffense?.rpg2526);
+    if (oppRpgGeneral > 0) {
+      const rpgDiff = oppRpgVsHand - oppRpgGeneral;
+      if (Math.abs(rpgDiff) > 0.5) {
+        if (rpgDiff > 0.5) {
+          // Rival es mejor vs este tipo de pitcher
+          adjustments.eraAdjustment += 0.6;
+          adjustments.kAdjustment -= 0.5;
+          adjustments.probabilityMultiplier *= 0.90;
+          adjustments.factors.push(`Rival fuerte vs ${pitcherHand}HP (+${rpgDiff.toFixed(1)} R/G): peligro`);
+        } else {
+          // Rival es peor vs este tipo de pitcher
+          adjustments.eraAdjustment -= 0.4;
+          adjustments.kAdjustment += 0.5;
+          adjustments.probabilityMultiplier *= 1.10;
+          adjustments.factors.push(`Rival débil vs ${pitcherHand}HP (${rpgDiff.toFixed(1)} R/G): ventaja`);
+        }
+      }
+    }
+  }
+  
+  // K/BB ratio (control del pitcher)
+  const kbb = safeNum(pitcher.kbb);
+  if (kbb > 3.5) {
+    // Excelente control
+    adjustments.kAdjustment += 0.5;
+    adjustments.ipAdjustment += 0.3;
+    adjustments.probabilityMultiplier *= 1.05;
+    adjustments.factors.push(`K/BB ${kbb.toFixed(2)} (elite): excelente control`);
+  } else if (kbb < 2.0) {
+    // Mal control
+    adjustments.kAdjustment -= 0.5;
+    adjustments.ipAdjustment -= 0.5;
+    adjustments.probabilityMultiplier *= 0.95;
+    adjustments.factors.push(`K/BB ${kbb.toFixed(2)} (bajo): control pobre`);
+  }
+  
+  // Descanso del pitcher
+  const restDays = isHome 
+    ? safeNum(gameData.restDays?.home)
+    : safeNum(gameData.restDays?.away);
+  
+  if (restDays > 0) {
+    if (restDays <= 3) {
+      // Descanso corto = menos IP, más riesgo
+      adjustments.ipAdjustment -= 0.8;
+      adjustments.eraAdjustment += 0.3;
+      adjustments.probabilityMultiplier *= 0.92;
+      adjustments.factors.push(`Descanso corto (${restDays}d): menos IP esperado`);
+    } else if (restDays >= 6) {
+      // Descanso largo = óxido, menos K primeras entradas
+      adjustments.kAdjustment -= 0.5;
+      adjustments.ipAdjustment -= 0.3;
+      adjustments.probabilityMultiplier *= 0.94;
+      adjustments.factors.push(`Descanso largo (${restDays}d): riesgo de óxido`);
+    }
+  }
+  
+  return adjustments;
+}
+
+/* ── Calculate probability and edge (CON TOP 5 FACTORES) ─── */
 function calculatePickProbability(pick, gameData) {
-  // Sistema de scoring basado en múltiples factores
+  // Sistema de scoring basado en múltiples factores + TOP 5
   let baseProb = 0.50; // 50% base
   let confidence = 0;
   
@@ -91,7 +423,12 @@ function calculatePickProbability(pick, gameData) {
     bullpen: 0,
     venue: 0,
     market: 0,
-    h2h: 0
+    h2h: 0,
+    momentum: 0,      // NUEVO
+    homeAdvantage: 0, // NUEVO
+    sharpMoney: 0,    // NUEVO
+    weather: 0,       // NUEVO
+    splits: 0         // NUEVO
   };
   
   // Analizar según el tipo de mercado
@@ -99,11 +436,80 @@ function calculatePickProbability(pick, gameData) {
     // Moneyline analysis
     const team = pick.sideTeam === gameData.away?.abr ? gameData.away : gameData.home;
     const opponent = pick.sideTeam === gameData.away?.abr ? gameData.home : gameData.away;
+    const isHome = pick.sideTeam === gameData.home?.abr;
+    
+    // ═══ TOP 5 FACTORES ═══
+    
+    // 1. MOMENTUM (racha del equipo)
+    const teamMomentum = getTeamMomentum(team?.record?.last10);
+    const oppMomentum = getTeamMomentum(opponent?.record?.last10);
+    
+    if (teamMomentum.status === 'HOT' && oppMomentum.status === 'COLD') {
+      factors.momentum = 0.12; // +12% probabilidad
+    } else if (teamMomentum.status === 'HOT') {
+      factors.momentum = 0.08;
+    } else if (teamMomentum.status === 'COLD') {
+      factors.momentum = -0.08;
+    } else if (teamMomentum.status === 'WARM') {
+      factors.momentum = 0.04;
+    } else if (teamMomentum.status === 'COOL') {
+      factors.momentum = -0.04;
+    }
+    
+    // 2. VENTAJA DE LOCAL (solo si pick es home)
+    if (isHome) {
+      const homeAdv = getHomeFieldAdvantage(gameData.venue?.name, team?.abr);
+      // Convertir factor (1.08-1.18) a ajuste de probabilidad
+      factors.homeAdvantage = (homeAdv - 1.0) * 0.8; // 0.08 factor = +6.4% prob
+    }
+    
+    // 3. SHARP MONEY
+    const sharpMoney = detectSharpMoney(gameData.market?.move, gameData.market?.publicPercent);
+    if (sharpMoney.isSharp) {
+      const sharpSide = sharpMoney.side === 'away' ? gameData.away?.abr : gameData.home?.abr;
+      if (sharpSide === pick.sideTeam) {
+        // Sharp money a nuestro favor
+        factors.sharpMoney = 0.08 * sharpMoney.confidence;
+      } else {
+        // Sharp money en contra (PELIGRO)
+        factors.sharpMoney = -0.10 * sharpMoney.confidence;
+      }
+    }
+    
+    // 4. CLIMA
+    const weatherImpact = getWeatherImpact(gameData.weather, gameData.wind, gameData.evtIso);
+    // Para ML, clima afecta menos, pero viento extremo puede favorecer ofensiva
+    if (Math.abs(weatherImpact.totalAdjustment) > 0.8) {
+      // Clima extremo favorece al equipo con mejor bullpen
+      const teamBullpen = isHome ? gameData.bullpen?.home : gameData.bullpen?.away;
+      const oppBullpen = isHome ? gameData.bullpen?.away : gameData.bullpen?.home;
+      const bullpenDiff = safeNum(oppBullpen?.era) - safeNum(teamBullpen?.era);
+      if (bullpenDiff > 0.5) {
+        factors.weather = 0.03; // Nuestro bullpen es mejor
+      }
+    }
+    
+    // 5. SPLITS AVANZADOS DEL PITCHER
+    const teamPitcher = isHome ? gameData.pitchers?.home : gameData.pitchers?.away;
+    const oppPitcher = isHome ? gameData.pitchers?.away : gameData.pitchers?.home;
+    const teamOffense = isHome ? gameData.offense?.home : gameData.offense?.away;
+    const oppOffense = isHome ? gameData.offense?.away : gameData.offense?.home;
+    
+    if (teamPitcher && oppOffense) {
+      const teamSplits = getAdvancedPitcherSplits(teamPitcher, oppOffense, gameData);
+      const oppSplits = getAdvancedPitcherSplits(oppPitcher, teamOffense, gameData);
+      
+      // Comparar splits
+      const splitDiff = teamSplits.probabilityMultiplier - oppSplits.probabilityMultiplier;
+      factors.splits = splitDiff * 0.15; // Convertir a ajuste de probabilidad
+    }
+    
+    // ═══ FACTORES ORIGINALES ═══
     
     // Factor pitcher (si hay datos)
     if (gameData.pitchers) {
-      const pitcher = pick.sideTeam === gameData.away?.abr ? gameData.pitchers.away : gameData.pitchers.home;
-      const oppPitcher = pick.sideTeam === gameData.away?.abr ? gameData.pitchers.home : gameData.pitchers.away;
+      const pitcher = isHome ? gameData.pitchers.home : gameData.pitchers.away;
+      const oppPitcher = isHome ? gameData.pitchers.away : gameData.pitchers.home;
       
       if (pitcher && oppPitcher) {
         const whipDiff = safeNum(oppPitcher.whip) - safeNum(pitcher.whip);
@@ -114,8 +520,8 @@ function calculatePickProbability(pick, gameData) {
     
     // Factor ofensivo
     if (gameData.offense) {
-      const offense = pick.sideTeam === gameData.away?.abr ? gameData.offense.away : gameData.offense.home;
-      const oppOffense = pick.sideTeam === gameData.away?.abr ? gameData.offense.home : gameData.offense.away;
+      const offense = isHome ? gameData.offense.home : gameData.offense.away;
+      const oppOffense = isHome ? gameData.offense.away : gameData.offense.home;
       
       if (offense && oppOffense) {
         const rpgDiff = safeNum(offense.rpg2526) - safeNum(oppOffense.rpg2526);
@@ -125,22 +531,78 @@ function calculatePickProbability(pick, gameData) {
     
     // Factor H2H
     if (gameData.h2h && gameData.h2h.gamesPlayed >= 3) {
-      const h2hWinRate = pick.sideTeam === gameData.away?.abr 
-        ? gameData.h2h.awayWins / gameData.h2h.gamesPlayed
-        : gameData.h2h.homeWins / gameData.h2h.gamesPlayed;
+      const h2hWinRate = isHome
+        ? gameData.h2h.homeWins / gameData.h2h.gamesPlayed
+        : gameData.h2h.awayWins / gameData.h2h.gamesPlayed;
       factors.h2h = (h2hWinRate - 0.5) * 0.15;
     }
     
   } else if (pick.market === 'TOTAL') {
     // Total runs analysis
+    
+    // ═══ TOP 5 FACTORES PARA TOTAL ═══
+    
+    // 4. CLIMA (CRÍTICO para totales)
+    const weatherImpact = getWeatherImpact(gameData.weather, gameData.wind, gameData.evtIso);
+    const projectedAdjustment = weatherImpact.totalAdjustment;
+    
+    // Base projection
+    let projectedTotal = 0;
     if (gameData.offense) {
-      const awayRpg = safeNum(gameData.offense.away?.rpg2526);
-      const homeRpg = safeNum(gameData.offense.home?.rpg2526);
-      const projectedTotal = (awayRpg + homeRpg) * safeNum(gameData.venue?.parkFactor || 1.0);
+      const awayRpg = safeNum(gameData.offense.away?.rpg2526Away || gameData.offense.away?.rpg2526);
+      const homeRpg = safeNum(gameData.offense.home?.rpg2526Home || gameData.offense.home?.rpg2526);
+      projectedTotal = (awayRpg + homeRpg) * safeNum(gameData.venue?.parkFactor || 1.0);
       
-      const lineDiff = projectedTotal - safeNum(pick.line);
-      if ((pick.side === 'Over' && lineDiff > 0) || (pick.side === 'Under' && lineDiff < 0)) {
-        factors.offense = Math.abs(lineDiff) * 0.03;
+      // Aplicar ajuste climático
+      projectedTotal += projectedAdjustment;
+    }
+    
+    const lineDiff = projectedTotal - safeNum(pick.line);
+    
+    // Determinar si el clima favorece nuestro pick
+    if (pick.side === 'Over' && projectedAdjustment > 0.3) {
+      factors.weather = 0.08; // Clima favorece Over
+    } else if (pick.side === 'Under' && projectedAdjustment < -0.3) {
+      factors.weather = 0.08; // Clima favorece Under
+    } else if (pick.side === 'Over' && projectedAdjustment < -0.5) {
+      factors.weather = -0.10; // Clima en contra de Over
+    } else if (pick.side === 'Under' && projectedAdjustment > 0.5) {
+      factors.weather = -0.10; // Clima en contra de Under
+    }
+    
+    // 5. SPLITS AVANZADOS (afectan runs permitidas)
+    const awayPitcher = gameData.pitchers?.away;
+    const homePitcher = gameData.pitchers?.home;
+    const awayOffense = gameData.offense?.away;
+    const homeOffense = gameData.offense?.home;
+    
+    if (awayPitcher && homePitcher && awayOffense && homeOffense) {
+      const awaySplits = getAdvancedPitcherSplits(awayPitcher, homeOffense, gameData);
+      const homeSplits = getAdvancedPitcherSplits(homePitcher, awayOffense, gameData);
+      
+      // ERA adjustments afectan total
+      const totalEraAdjustment = awaySplits.eraAdjustment + homeSplits.eraAdjustment;
+      
+      if (pick.side === 'Over' && totalEraAdjustment > 0.8) {
+        factors.splits = 0.06; // Pitchers vulnerables = Over
+      } else if (pick.side === 'Under' && totalEraAdjustment < -0.8) {
+        factors.splits = 0.06; // Pitchers dominantes = Under
+      }
+    }
+    
+    // ═══ FACTORES ORIGINALES ═══
+    
+    if ((pick.side === 'Over' && lineDiff > 0) || (pick.side === 'Under' && lineDiff < 0)) {
+      factors.offense = Math.abs(lineDiff) * 0.03;
+    }
+    
+    // Bullpen factor
+    if (gameData.bullpen) {
+      const avgBullpenWhip = (safeNum(gameData.bullpen.away?.whip) + safeNum(gameData.bullpen.home?.whip)) / 2;
+      if (pick.side === 'Over' && avgBullpenWhip > 1.40) {
+        factors.bullpen = 0.05;
+      } else if (pick.side === 'Under' && avgBullpenWhip < 1.20) {
+        factors.bullpen = 0.05;
       }
     }
     
@@ -159,8 +621,8 @@ function calculatePickProbability(pick, gameData) {
     }
   }
   
-  // Factor de movimiento de mercado
-  if (gameData.market?.move) {
+  // Factor de movimiento de mercado (mejorado con sharp money)
+  if (gameData.market?.move && pick.market === 'ML') {
     const mlMove = pick.sideTeam === gameData.away?.abr 
       ? Math.abs(safeNum(gameData.market.move.mlAway))
       : Math.abs(safeNum(gameData.market.move.mlHome));
@@ -175,10 +637,16 @@ function calculatePickProbability(pick, gameData) {
   baseProb = Math.max(0.35, Math.min(0.75, baseProb + totalAdjustment));
   
   // Calcular confianza en cada factor (0-1)
-  confidence = Object.values(factors).filter(v => Math.abs(v) > 0.02).length / 6;
+  const activeFactors = Object.values(factors).filter(v => Math.abs(v) > 0.02).length;
+  confidence = activeFactors / Object.keys(factors).length;
   
   // Calcular edge sobre la línea
-  const impliedProb = gameData.odds?.novig?.[pick.sideTeam === gameData.away?.abr ? 'away' : 'home'] || 0.5;
+  let impliedProb = 0.5;
+  if (pick.market === 'ML' && gameData.odds?.novig) {
+    impliedProb = pick.sideTeam === gameData.away?.abr 
+      ? gameData.odds.novig.away 
+      : gameData.odds.novig.home;
+  }
   const edge = baseProb - impliedProb;
   
   return {
@@ -191,42 +659,76 @@ function calculatePickProbability(pick, gameData) {
       bullpen: Number(Math.max(0, Math.min(1, 0.5 + factors.bullpen * 2)).toFixed(2)),
       venue: Number(Math.max(0, Math.min(1, 0.5 + factors.venue * 2)).toFixed(2)),
       market: Number(Math.max(0, Math.min(1, 0.5 + factors.market * 2)).toFixed(2)),
-      h2h: Number(Math.max(0, Math.min(1, 0.5 + factors.h2h * 2)).toFixed(2))
+      h2h: Number(Math.max(0, Math.min(1, 0.5 + factors.h2h * 2)).toFixed(2)),
+      momentum: Number(Math.max(0, Math.min(1, 0.5 + factors.momentum * 2)).toFixed(2)),
+      homeAdvantage: Number(Math.max(0, Math.min(1, 0.5 + factors.homeAdvantage * 2)).toFixed(2)),
+      sharpMoney: Number(Math.max(0, Math.min(1, 0.5 + factors.sharpMoney * 2)).toFixed(2)),
+      weather: Number(Math.max(0, Math.min(1, 0.5 + factors.weather * 2)).toFixed(2)),
+      splits: Number(Math.max(0, Math.min(1, 0.5 + factors.splits * 2)).toFixed(2))
     }
   };
 }
 
-/* ── Filtros de exclusión estrictos ──────────────────────── */
+/* ── Filtros de exclusión ESTRICTOS (FASE 2) ────────────── */
 function shouldExcludePick(pick, gameData, analytics) {
   const exclusions = [];
   
-  // 1. Edge mínimo requerido
-  if (analytics.edge < 0.05) {
-    exclusions.push('Edge insuficiente (<5%)');
+  // 0. MERCADOS DESHABILITADOS (K e IP tienen <35% win rate)
+  if (DISABLED_MARKETS.includes(pick.market)) {
+    exclusions.push(`Mercado ${pick.market} DESHABILITADO (win rate histórico <35%)`);
+    return { excluded: true, reasons: exclusions }; // Retornar inmediatamente
   }
   
-  // 2. Probabilidad muy baja
-  if (analytics.probability < 0.52) {
-    exclusions.push('Probabilidad muy baja (<52%)');
+  // 1. Edge mínimo requerido (AUMENTADO de 5% a 8%)
+  if (analytics.edge < 0.08) {
+    exclusions.push('Edge insuficiente (<8%)');
   }
   
-  // 3. Lineup no confirmado para picks "strong"
-  if (pick.confidence === 'strong') {
+  // 2. Probabilidad muy baja (AUMENTADO de 52% a 55%)
+  if (analytics.probability < 0.55) {
+    exclusions.push('Probabilidad muy baja (<55%)');
+  }
+  
+  // 3. Filtros específicos para Over/Under (históricamente malos)
+  if (pick.side === 'Over' && analytics.probability < 0.60) {
+    exclusions.push('Over requiere probabilidad >60% (win rate histórico 29%)');
+  }
+  
+  if (pick.side === 'Under' && analytics.probability < 0.58) {
+    exclusions.push('Under requiere probabilidad >58% (win rate histórico 38%)');
+  }
+  
+  // 4. TOTAL requiere edge >10% (win rate histórico 42.6%)
+  if (pick.market === 'TOTAL' && analytics.edge < 0.10) {
+    exclusions.push('TOTAL requiere edge >10% (win rate histórico bajo)');
+  }
+  
+  // 5. Sharp money en dirección opuesta (CRÍTICO)
+  const sharpMoney = detectSharpMoney(gameData.market?.move, gameData.market?.publicPercent);
+  if (sharpMoney.isSharp && pick.market === 'ML') {
+    const sharpSide = sharpMoney.side === 'away' ? gameData.away?.abr : gameData.home?.abr;
+    if (sharpSide !== pick.sideTeam && sharpMoney.confidence > 0.75) {
+      exclusions.push(`Sharp money en dirección opuesta: ${sharpMoney.message}`);
+    }
+  }
+  
+  // 6. Lineup no confirmado para picks "strong"
+  if (pick.confidence === 'strong' && pick.market === 'ML') {
     const lineup = pick.sideTeam === gameData.away?.abr ? gameData.lineup?.away : gameData.lineup?.home;
     if (lineup && !lineup.confirmed) {
       exclusions.push('Lineup no confirmado para pick strong');
     }
   }
   
-  // 4. Muestra pequeña del pitcher
+  // 7. Muestra pequeña del pitcher (para K/IP, aunque están deshabilitados)
   if (pick.market === 'K' || pick.market === 'IP') {
     const pitcher = pick.target === 'away' ? gameData.pitchers?.away : gameData.pitchers?.home;
-    if (pitcher && safeNum(pitcher.splitGames) < 3) {
-      exclusions.push('Muestra del pitcher muy pequeña (<3 juegos)');
+    if (pitcher && safeNum(pitcher.splitGames) < 5) {
+      exclusions.push('Muestra del pitcher muy pequeña (<5 juegos)');
     }
   }
   
-  // 5. Conflicto entre factores principales
+  // 8. Conflicto entre factores principales
   const factors = analytics.factors;
   const highFactors = Object.values(factors).filter(v => v > 0.65).length;
   const lowFactors = Object.values(factors).filter(v => v < 0.35).length;
@@ -235,29 +737,39 @@ function shouldExcludePick(pick, gameData, analytics) {
     exclusions.push('Conflicto entre factores principales');
   }
   
-  // 6. Movimiento de línea en dirección opuesta
+  // 9. Movimiento de línea en dirección opuesta (AUMENTADO de 15 a 12 puntos)
   if (gameData.market?.move && pick.market === 'ML') {
     const mlMove = pick.sideTeam === gameData.away?.abr 
       ? safeNum(gameData.market.move.mlAway)
       : safeNum(gameData.market.move.mlHome);
     
     // Si el movimiento es negativo (línea empeoró) y es significativo
-    if (mlMove < -15) {
-      exclusions.push('Movimiento de línea en contra (>15 puntos)');
+    if (mlMove < -12) {
+      exclusions.push(`Movimiento de línea en contra (${Math.abs(mlMove).toFixed(0)} puntos)`);
     }
   }
   
-  // 7. Clima extremo sin datos históricos
-  if (gameData.weather) {
+  // 10. Clima extremo sin datos históricos
+  if (gameData.weather && !gameData.weather.indoor) {
     const temp = safeNum(gameData.weather.tempF);
-    const wind = safeNum(gameData.weather.windMph);
+    const wind = safeNum(gameData.wind?.mph || gameData.weather.windMph);
     
-    if ((temp > 95 || temp < 45) && !gameData.weather.indoor) {
-      exclusions.push('Clima extremo sin ajuste histórico');
+    if (temp > 95 || temp < 40) {
+      exclusions.push(`Clima extremo (${temp}°F): alta varianza`);
     }
     
-    if (wind > 20 && !gameData.weather.indoor) {
-      exclusions.push('Viento extremo (>20 mph)');
+    if (wind > 22) {
+      exclusions.push(`Viento extremo (${wind} mph): alta varianza`);
+    }
+  }
+  
+  // 11. Momentum extremadamente negativo
+  if (pick.market === 'ML') {
+    const team = pick.sideTeam === gameData.away?.abr ? gameData.away : gameData.home;
+    const teamMomentum = getTeamMomentum(team?.record?.last10);
+    
+    if (teamMomentum.status === 'COLD' && analytics.probability < 0.58) {
+      exclusions.push(`Equipo en racha fría (${teamMomentum.wins}-${10-teamMomentum.wins}) con probabilidad baja`);
     }
   }
   
@@ -267,10 +779,57 @@ function shouldExcludePick(pick, gameData, analytics) {
   };
 }
 
-/* ── Build human-readable game block for prompt ─────────── */
+/* ── Build human-readable game block for prompt (FASE 2) ─── */
 function formatGame(g) {
   const lines = [];
   lines.push(`══ ${g.away?.abr || '?'} @ ${g.home?.abr || '?'}  (gameId: ${g.gameId || ''}) ══`);
+
+  /* ═══ TOP 5 FACTORES ═══ */
+  
+  /* Momentum del equipo */
+  const awayMomentum = getTeamMomentum(g.away?.record?.last10);
+  const homeMomentum = getTeamMomentum(g.home?.record?.last10);
+  lines.push(`MOMENTUM: ${g.away?.abr} ${awayMomentum.status} (${awayMomentum.wins}-${10-awayMomentum.wins} L10) · ${g.home?.abr} ${homeMomentum.status} (${homeMomentum.wins}-${10-homeMomentum.wins} L10)`);
+  
+  /* Ventaja de local */
+  const homeAdv = getHomeFieldAdvantage(g.venue?.name, g.home?.abr);
+  const homeAdvPct = ((homeAdv - 1.0) * 100).toFixed(0);
+  lines.push(`VENTAJA LOCAL: ${g.home?.abr} +${homeAdvPct}% (${g.venue?.name || 'venue desconocido'})`);
+  
+  /* Sharp money */
+  const sharpMoney = detectSharpMoney(g.market?.move, g.market?.publicPercent);
+  if (sharpMoney.isSharp) {
+    lines.push(`SHARP MONEY: ${sharpMoney.type} → ${sharpMoney.side?.toUpperCase()} (${(sharpMoney.confidence * 100).toFixed(0)}% confianza)`);
+    lines.push(`  ${sharpMoney.message}`);
+  } else {
+    lines.push(`SHARP MONEY: No detectado`);
+  }
+  
+  /* Clima detallado */
+  const weatherImpact = getWeatherImpact(g.weather, g.wind, g.evtIso);
+  if (weatherImpact.factors.length > 0) {
+    lines.push(`CLIMA DETALLADO:`);
+    weatherImpact.factors.forEach(f => lines.push(`  ${f}`));
+    lines.push(`  Ajuste total: ${weatherImpact.totalAdjustment > 0 ? '+' : ''}${weatherImpact.totalAdjustment.toFixed(1)} runs esperadas`);
+  }
+  
+  /* Splits avanzados */
+  if (g.pitchers?.away && g.offense?.home) {
+    const awaySplits = getAdvancedPitcherSplits(g.pitchers.away, g.offense.home, g);
+    if (awaySplits.factors.length > 0) {
+      lines.push(`SPLITS ${g.away?.abr} pitcher:`);
+      awaySplits.factors.forEach(f => lines.push(`  ${f}`));
+    }
+  }
+  if (g.pitchers?.home && g.offense?.away) {
+    const homeSplits = getAdvancedPitcherSplits(g.pitchers.home, g.offense.away, g);
+    if (homeSplits.factors.length > 0) {
+      lines.push(`SPLITS ${g.home?.abr} pitcher:`);
+      homeSplits.factors.forEach(f => lines.push(`  ${f}`));
+    }
+  }
+
+  /* ═══ DATOS ORIGINALES ═══ */
 
   /* H2H Data */
   if (g.h2h && g.h2h.gamesPlayed > 0) {
@@ -328,6 +887,9 @@ function formatGame(g) {
     lines.push(`Apertura: ML ${g.away?.abr} ${mk.mlOpen?.away ?? '–'} · ${g.home?.abr} ${mk.mlOpen?.home ?? '–'} · O/U ${mk.ouOpen ?? '–'}`);
     lines.push(`Movimiento: ML ${g.away?.abr} ${mk.move?.mlAway ?? 0} · ${g.home?.abr} ${mk.move?.mlHome ?? 0} · Total ${mk.move?.total ?? 0}`);
   }
+  if (mk.publicPercent) {
+    lines.push(`Público: ${g.away?.abr} ${num(mk.publicPercent.away, 0)}% · ${g.home?.abr} ${num(mk.publicPercent.home, 0)}%`);
+  }
 
   /* Venue & weather */
   const vn = g.venue || {};
@@ -374,15 +936,26 @@ function formatGame(g) {
   return lines.join('\n');
 }
 
-/* ── Enhanced System prompt with stricter rules ──────────── */
+/* ── Enhanced System prompt with TOP 5 FACTORS ───────────── */
 const SYSTEM_PROMPT = `Eres un analista experto de apuestas MLB con enfoque en VALUE BETTING y APRENDIZAJE CONTINUO. Recibes datos REALES y detallados de cada juego, además de tu HISTORIAL DE RENDIMIENTO para aprender de picks pasados.
 
+═══ TU HISTORIAL REAL (CRÍTICO - APRENDE DE ESTO) ═══
+• Win Rate Global: 43.0% ❌ (Objetivo: >52.4%)
+• ML: 56.2% ✅ (50W-39L) - ÚNICO MERCADO RENTABLE
+• TOTAL: 42.6% ❌ (23W-28L) - BAJO BREAKEVEN
+• K: 30.3% ❌ (20W-46L) - DESASTROSO (DESHABILITADO)
+• IP: 28.6% ❌ (6W-15L) - DESASTROSO (DESHABILITADO)
+• Over: 29.2% ❌ (14W-34L) - MUY MALO
+• Under: 37.6% ❌ (35W-55L) - MALO
+
+CONCLUSIÓN: Solo ML es rentable. TOTAL necesita edge >10%. Over/Under requieren probabilidad >58-60%.
+
 IMPORTANTE: Si recibes un bloque "APRENDIZAJE DE PICKS HISTÓRICOS", úsalo para:
-1. PRIORIZAR mercados y patrones con mejor win rate histórico
-2. EVITAR patrones que han fallado consistentemente
-3. APRENDER de picks exitosos recientes (qué factores tenían en común)
-4. APRENDER de picks fallidos recientes (qué señales ignoraste)
-5. SER MÁS SELECTIVO con mercados que tienen <50% win rate histórico
+1. PRIORIZAR ML (único mercado con 56% win rate)
+2. SER EXTREMADAMENTE SELECTIVO con TOTAL (solo edge >10%)
+3. EVITAR Over a menos que probabilidad >60%
+4. EVITAR Under a menos que probabilidad >58%
+5. K e IP están DESHABILITADOS (win rate <35%)
 
 DATOS QUE RECIBES POR JUEGO:
 • H2H (head-to-head): Historial directo entre equipos (últimos 5 juegos), récord y runs promedio
@@ -390,53 +963,59 @@ DATOS QUE RECIBES POR JUEGO:
 • Ofensiva (L10 + temporada): R/G, K/G, H/G, hotRate, splits vs LHP/RHP
 • Bullpen (L10): ERA, WHIP, K/9, IP/G
 • Momios: ML open/close, O/U, movimiento de línea, probabilidad sin vig
-• Venue: park factor, temperatura, viento
+• Venue: park factor, temperatura, viento, humedad
 • Lineup: confirmado o pendiente
 • Descanso del pitcher, umpire con factor K
+• Momentum del equipo (racha L10)
 
-═══ REGLAS DE ANÁLISIS MEJORADAS ═══
+═══ REGLAS DE ANÁLISIS MEJORADAS (FASE 2) ═══
 
-1. ML (moneyline):
-   - PRIORIDAD: H2H reciente. Si un equipo domina 4-1 o mejor en L5 H2H → señal fuerte
+1. ML (moneyline) - PRIORIDAD MÁXIMA:
+   - MOMENTUM: Equipo HOT (7+ wins L10) vs COLD (≤3 wins L10) = señal FUERTE
+   - VENTAJA LOCAL: Coors Field, Fenway, Wrigley = +8-15% probabilidad
+   - SHARP MONEY: RLM (reverse line movement) = seguir el dinero profesional
+   - H2H reciente: Si un equipo domina 4-1 o mejor en L5 H2H → señal fuerte
    - Compara WHIP contextual + K/BB + splitEdge de pitchers
    - Si pitcher superior tiene momio positivo (underdog) → value potencial
    - Bullpen crítico: abridor elite + bullpen ERA > 4.50 = riesgo alto
-   - Movimiento ML > 15 puntos = dinero sharp, considéralo seriamente
-   - NO sugieras si splitEdge < 0.5 Y H2H está parejo
+   - Movimiento ML > 12 puntos en contra = EVITAR
+   - NO sugieras si splitEdge < 0.5 Y H2H está parejo Y momentum neutral
 
-2. TOTAL (Over/Under):
-   - Base = (R/G away visitante + R/G home local) × park factor
+2. TOTAL (Over/Under) - EXTREMADAMENTE SELECTIVO:
+   - CLIMA: Temp >85°F +0.6, <55°F -0.5, viento out >15mph +1.0, humedad >70% -0.3
+   - HORA: Juego de día (1-4pm) = +0.4 runs
+   - Base = (R/G away visitante + R/G home local) × park factor + ajustes climáticos
    - H2H: Si promedio de runs en H2H difiere >1.5 de la línea → señal
-   - Ajustes: temp >85°F +0.5, <55°F -0.5, viento out >10mph +0.5
    - Bullpen WHIP >1.40 ambos equipos → Over. <1.20 ambos → Under
-   - MÍNIMO: diferencia señal vs línea > 0.7 runs
+   - MÍNIMO: edge > 10% (no 5%) debido a win rate histórico bajo
+   - Over requiere probabilidad >60%, Under >58%
    - Movimiento O/U > 0.5 = sharp money
 
-3. K (strikeouts):
-   - Base = K promedio pitcher L10
-   - K/G rival >9.0 + hotRate <45% = target premium K Over
-   - K/G rival <7.5 + hotRate >55% = peligro K Over, considerar Under
-   - Umpire kZone >1.04 = +0.5 K esperados. <0.96 = -0.5 K
-   - splitEdge en K/9 vs zurdo/derecho importa
-   - MÍNIMO: 3+ juegos de muestra del pitcher
+3. K (strikeouts) - DESHABILITADO:
+   - Win rate histórico 30.3% = NO GENERAR PICKS DE K
+   - Mercado deshabilitado hasta mejorar el modelo
 
-4. IP (innings pitched):
-   - IP contextual ≥6.0 + rival R/G <4.5 → IP Over
-   - IP contextual ≤5.0 + rival R/G >5.0 → IP Under
-   - Descanso corto (≤3 días) → reduce IP esperado en 0.5-1.0
-   - Si pitcher permite >3.5 R/G → no sugieras IP Over
+4. IP (innings pitched) - DESHABILITADO:
+   - Win rate histórico 28.6% = NO GENERAR PICKS DE IP
+   - Mercado deshabilitado hasta mejorar el modelo
 
 ═══ REGLAS DE CONFIANZA ESTRICTAS ═══
-• "strong": 4+ señales alineadas + edge >8% + H2H favorable + sin conflictos
-• "medium": 2-3 señales positivas + edge >5% + máximo 1 factor en contra
+• "strong": 5+ señales alineadas + edge >10% + momentum favorable + sharp money a favor + sin conflictos
+• "medium": 3-4 señales positivas + edge >8% + máximo 1 factor en contra
 • NO generes pick si:
-  - Edge calculado < 5%
-  - Señales contradictorias (ej: pitcher dominante pero bullpen terrible + rival hot)
-  - Muestra muy pequeña (pitcher <3 juegos, H2H <2 juegos)
-  - Lineup no confirmado para picks "strong"
-  - Movimiento de línea >15 puntos en tu contra
+  - Edge calculado < 8% (era 5%)
+  - Probabilidad < 55% (era 52%)
+  - Over con probabilidad <60%
+  - Under con probabilidad <58%
+  - TOTAL con edge <10%
+  - Señales contradictorias
+  - Sharp money en dirección opuesta (RLM)
+  - Equipo COLD sin ventajas compensatorias
+  - Movimiento de línea >12 puntos en tu contra
 
-MÁXIMO 2 picks por juego. Calidad absoluta > cantidad.
+MÁXIMO 1 PICK POR JUEGO. Calidad absoluta > cantidad.
+
+PRIORIDAD: 90% ML, 10% TOTAL (solo con edge >10%).
 
 Devuelve SOLO JSON:
 {
@@ -445,13 +1024,12 @@ Devuelve SOLO JSON:
       "gameId": "string",
       "topPicks": [
         {
-          "market": "ML"|"TOTAL"|"K"|"IP",
+          "market": "ML"|"TOTAL",
           "sideTeam": "ABR del equipo (solo para ML)",
-          "side": "Over"|"Under" (para TOTAL, K, IP)",
-          "line": number (para TOTAL, K, IP),
-          "target": "away"|"home" (para K e IP)",
+          "side": "Over"|"Under" (para TOTAL)",
+          "line": number (para TOTAL)",
           "confidence": "strong"|"medium",
-          "reason": "Razón concreta con datos específicos del input, menciona H2H si aplica"
+          "reason": "Razón concreta con datos específicos: momentum, sharp money, clima, splits, H2H"
         }
       ]
     }
