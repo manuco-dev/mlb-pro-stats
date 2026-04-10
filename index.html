@@ -1785,22 +1785,76 @@
     if (!games.length) return;
     const dateKey = todayStr();
     const cacheKey = `aiPicks-${dateKey}`;
+    
+    // 🔍 DEBUG: Inicio de función
+    console.log('🚀 callAiForPicks() iniciada');
+    console.log('   Games a procesar:', games.length);
+    console.log('   Cache key:', cacheKey);
+    
     try {
       const cached = localStorage.getItem(cacheKey);
       if (cached) {
+        console.log('');
+        console.log('💾 USANDO CACHÉ (no se llama al API)');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('⚠️ Para ver la respuesta del API, limpia el caché:');
+        console.log('   localStorage.removeItem("' + cacheKey + '")');
+        console.log('   Luego recarga la página y genera picks de nuevo');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('');
+        
         const data = JSON.parse(cached);
+        
+        console.log('📦 DATOS DEL CACHÉ:');
+        console.log('   Enhanced:', data?.enhanced);
+        console.log('   Pipeline:', data?.pipeline);
+        console.log('   Total picks:', data?.picks?.length || 0);
+        console.log('   Metadata:', data?.metadata);
+        console.log('');
+        
         const arr = data?.picks || [];
+        
         for (const g of arr) {
           const cardId = gameIdIndex[g.gameId] || '';
           if (!cardId || !picksMap[cardId]) continue;
           const base = picksMap[cardId];
+          
+          console.log(`🎯 JUEGO (CACHÉ): ${base.awayAbr} @ ${base.homeAbr} (${g.gameId})`);
+          console.log(`   Picks en caché: ${g.topPicks?.length || 0}`);
+          
           const meta = aiPayloadMap[cardId] || {};
           const lastAway = meta?.away?.pitcherLast || '';
           const lastHome = meta?.home?.pitcherLast || '';
           const pills = [];
+          
           for (const p of (g.topPicks || [])) {
             const conf = (p.confidence || '').toLowerCase();
             const badge = conf === 'strong' ? 'strong' : 'lean';
+            
+            // 🔍 DEBUG: Mostrar cada pick del caché
+            console.log('');
+            console.log(`   ┌─ PICK ${badge.toUpperCase()} (CACHÉ)`);
+            console.log(`   │ Market: ${p.market}`);
+            console.log(`   │ Side: ${p.side || p.sideTeam || '?'}`);
+            console.log(`   │ Line: ${p.line || 'N/A'}`);
+            console.log(`   │ Confidence: ${p.confidence}`);
+            console.log(`   │`);
+            console.log(`   │ 📝 RAZÓN (${p.reason?.length || 0} caracteres):`);
+            console.log(`   │ ${'-'.repeat(60)}`);
+            if (p.reason) {
+              const reasonLines = p.reason.split('\n');
+              reasonLines.slice(0, 10).forEach(line => {
+                console.log(`   │ ${line}`);
+              });
+              if (reasonLines.length > 10) {
+                console.log(`   │ ... (${reasonLines.length - 10} líneas más)`);
+              }
+            } else {
+              console.log(`   │ ⚠️ SIN RAZÓN en caché`);
+            }
+            console.log(`   └${'─'.repeat(60)}`);
+            console.log('');
+            
             if (p.market === 'ML') {
               const abr = p.sideTeam || p.sideAbr || (p.side === 'away' ? base.awayAbr : p.side === 'home' ? base.homeAbr : '');
           if (abr) pills.push(createPickEntry({ market: 'ML', subject: abr, badge, source: 'ai', reason: p.reason || '' }));
@@ -1814,16 +1868,33 @@
           if (who && p.side) pills.push(createPickEntry({ market: 'IP', subject: who, side: p.side, line: p.line, badge, source: 'ai', reason: p.reason || '' }));
             }
           }
+          
+          console.log(`   ✅ Pills creados: ${pills.length}`);
+          console.log('');
+          
           const existing = new Set(base.picks.map(x=>x.text));
           const merged = base.picks.concat(pills.filter(x=>!existing.has(x.text)));
           base.picks = merged;
           picksMap[cardId] = base;
         }
+        
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('✅ PROCESAMIENTO COMPLETADO (DESDE CACHÉ)');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('');
+        
         renderSummary();
         schedulePicksSync(500);
         return;
       }
-    } catch (_) {}
+    } catch (e) {
+      console.error('❌ Error al leer caché:', e);
+    }
+    
+    console.log('');
+    console.log('🌐 LLAMANDO AL API (no hay caché)');
+    console.log('');
+    
     const payload = { date: dateKey, games }; // Sistema mejorado con explicaciones detalladas
     const data = await fetchAppJson('/api/ai-picks-enhanced', {
       method: 'POST',
