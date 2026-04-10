@@ -669,7 +669,158 @@ function calculatePickProbability(pick, gameData) {
   };
 }
 
-/* ── Filtros de exclusión ESTRICTOS (FASE 2) ────────────── */
+/* ── Generate detailed explanation for strong picks ─────── */
+function generateDetailedExplanation(pick, gameData, analytics) {
+  if (pick.confidence !== 'strong') {
+    return pick.reason; // Solo picks strong tienen explicación detallada
+  }
+  
+  const explanationParts = [];
+  const factors = analytics.factors;
+  
+  // Encabezado
+  explanationParts.push(`🌟 PICK FUERTE - Análisis Detallado:`);
+  explanationParts.push('');
+  
+  // Razón principal de la IA
+  explanationParts.push(`📊 Razón Principal: ${pick.reason}`);
+  explanationParts.push('');
+  
+  // Analytics generales
+  explanationParts.push(`📈 Métricas:`);
+  explanationParts.push(`• Probabilidad: ${(analytics.probability * 100).toFixed(1)}%`);
+  explanationParts.push(`• Edge sobre línea: ${(analytics.edge * 100).toFixed(1)}%`);
+  explanationParts.push(`• Confianza del modelo: ${(analytics.confidence * 100).toFixed(0)}%`);
+  explanationParts.push('');
+  
+  // Factores clave (Top 5 + originales)
+  explanationParts.push(`🔍 Factores Analizados:`);
+  
+  // Momentum
+  if (factors.momentum > 0.60) {
+    const team = pick.sideTeam === gameData.away?.abr ? gameData.away : gameData.home;
+    const opponent = pick.sideTeam === gameData.away?.abr ? gameData.home : gameData.away;
+    const teamMomentum = getTeamMomentum(team?.record?.last10);
+    const oppMomentum = getTeamMomentum(opponent?.record?.last10);
+    explanationParts.push(`✅ MOMENTUM: ${team?.abr} está ${teamMomentum.status} (${teamMomentum.wins}-${10-teamMomentum.wins} L10) vs ${opponent?.abr} ${oppMomentum.status} (${oppMomentum.wins}-${10-oppMomentum.wins} L10)`);
+  } else if (factors.momentum < 0.40) {
+    explanationParts.push(`⚠️ Momentum: Factor neutral o negativo`);
+  }
+  
+  // Ventaja de local
+  if (factors.homeAdvantage > 0.55 && pick.market === 'ML') {
+    const isHome = pick.sideTeam === gameData.home?.abr;
+    if (isHome) {
+      const homeAdv = getHomeFieldAdvantage(gameData.venue?.name, gameData.home?.abr);
+      const homeAdvPct = ((homeAdv - 1.0) * 100).toFixed(0);
+      explanationParts.push(`✅ VENTAJA LOCAL: ${gameData.home?.abr} en ${gameData.venue?.name} (+${homeAdvPct}% histórico)`);
+    }
+  }
+  
+  // Sharp money
+  if (factors.sharpMoney > 0.55) {
+    const sharpMoney = detectSharpMoney(gameData.market?.move, gameData.market?.publicPercent);
+    if (sharpMoney.isSharp) {
+      explanationParts.push(`✅ SHARP MONEY: ${sharpMoney.message}`);
+    }
+  } else if (factors.sharpMoney < 0.45) {
+    explanationParts.push(`⚠️ Sharp Money: Movimiento en contra o neutral`);
+  }
+  
+  // Clima
+  if (Math.abs(factors.weather - 0.5) > 0.08) {
+    const weatherImpact = getWeatherImpact(gameData.weather, gameData.wind, gameData.evtIso);
+    if (weatherImpact.factors.length > 0) {
+      explanationParts.push(`${factors.weather > 0.55 ? '✅' : '⚠️'} CLIMA:`);
+      weatherImpact.factors.slice(0, 2).forEach(f => {
+        explanationParts.push(`  • ${f}`);
+      });
+    }
+  }
+  
+  // Splits del pitcher
+  if (factors.splits > 0.55 || factors.splits < 0.45) {
+    const isHome = pick.sideTeam === gameData.home?.abr;
+    const pitcher = isHome ? gameData.pitchers?.home : gameData.pitchers?.away;
+    const oppOffense = isHome ? gameData.offense?.away : gameData.offense?.home;
+    
+    if (pitcher && oppOffense) {
+      const splits = getAdvancedPitcherSplits(pitcher, oppOffense, gameData);
+      if (splits.factors.length > 0) {
+        explanationParts.push(`${factors.splits > 0.55 ? '✅' : '⚠️'} SPLITS DEL PITCHER:`);
+        splits.factors.slice(0, 2).forEach(f => {
+          explanationParts.push(`  • ${f}`);
+        });
+      }
+    }
+  }
+  
+  // Pitcher
+  if (factors.pitcher > 0.60) {
+    explanationParts.push(`✅ PITCHER: Ventaja significativa en WHIP y K/BB`);
+  } else if (factors.pitcher < 0.40) {
+    explanationParts.push(`⚠️ Pitcher: En desventaja`);
+  }
+  
+  // Ofensiva
+  if (factors.offense > 0.60) {
+    explanationParts.push(`✅ OFENSIVA: Ventaja en producción de runs`);
+  } else if (factors.offense < 0.40) {
+    explanationParts.push(`⚠️ Ofensiva: En desventaja`);
+  }
+  
+  // Bullpen
+  if (factors.bullpen > 0.55) {
+    explanationParts.push(`✅ BULLPEN: Ventaja en relevistas`);
+  } else if (factors.bullpen < 0.45) {
+    explanationParts.push(`⚠️ Bullpen: En desventaja`);
+  }
+  
+  // H2H
+  if (factors.h2h > 0.60) {
+    if (gameData.h2h && gameData.h2h.gamesPlayed >= 3) {
+      const isHome = pick.sideTeam === gameData.home?.abr;
+      const wins = isHome ? gameData.h2h.homeWins : gameData.h2h.awayWins;
+      const losses = gameData.h2h.gamesPlayed - wins;
+      explanationParts.push(`✅ HEAD-TO-HEAD: ${pick.sideTeam} domina ${wins}-${losses} en últimos ${gameData.h2h.gamesPlayed} juegos`);
+    }
+  }
+  
+  // Venue/Park Factor
+  if (pick.market === 'TOTAL' && gameData.venue?.parkFactor) {
+    const pf = safeNum(gameData.venue.parkFactor);
+    if (pf > 1.05) {
+      explanationParts.push(`✅ VENUE: ${gameData.venue.name} favorece ofensiva (PF ${pf.toFixed(2)})`);
+    } else if (pf < 0.95) {
+      explanationParts.push(`✅ VENUE: ${gameData.venue.name} favorece pitcheo (PF ${pf.toFixed(2)})`);
+    }
+  }
+  
+  explanationParts.push('');
+  
+  // Resumen final
+  const activeFactors = Object.entries(factors).filter(([_, v]) => v > 0.55 || v < 0.45).length;
+  explanationParts.push(`📌 Resumen: ${activeFactors} factores alineados a favor de este pick.`);
+  
+  // Advertencias si las hay
+  const warnings = [];
+  if (!gameData.lineup?.away?.confirmed || !gameData.lineup?.home?.confirmed) {
+    warnings.push('Lineup pendiente de confirmar');
+  }
+  if (gameData.weather && !gameData.weather.indoor) {
+    const temp = safeNum(gameData.weather.tempF);
+    if (temp > 90 || temp < 45) {
+      warnings.push(`Clima extremo (${temp}°F)`);
+    }
+  }
+  
+  if (warnings.length > 0) {
+    explanationParts.push('');
+    explanationParts.push(`⚠️ Consideraciones: ${warnings.join(', ')}`);
+  }
+  
+  return explanationParts.join('\n');
+}
 function shouldExcludePick(pick, gameData, analytics) {
   const exclusions = [];
   
@@ -936,8 +1087,56 @@ function formatGame(g) {
   return lines.join('\n');
 }
 
-/* ── Enhanced System prompt with TOP 5 FACTORS ───────────── */
-const SYSTEM_PROMPT = `Eres un analista experto de apuestas MLB con enfoque en VALUE BETTING y APRENDIZAJE CONTINUO. Recibes datos REALES y detallados de cada juego, además de tu HISTORIAL DE RENDIMIENTO para aprender de picks pasados.
+/* ══════════════════════════════════════════════════════════
+   PIPELINE 2 ETAPAS:
+   ETAPA 1 → gpt-4o-mini: Escanea TODOS los juegos y puntúa candidatos (0-10)
+   ETAPA 2 → gpt-4o: Análisis profundo SOLO de candidatos con score ≥ 5
+   ══════════════════════════════════════════════════════════ */
+
+/* ── ETAPA 1: Prompt de scoring rápido (gpt-4o-mini) ────── */
+const STAGE1_SYSTEM_PROMPT = `Eres un scout rápido de apuestas MLB. Tu único trabajo es identificar qué juegos tienen POTENCIAL DE VALUE, NO hacer picks finales.
+
+Para cada juego asigna un SCORE de 0 a 10 basado en estos criterios:
+• SCORE 9-10: Múltiples señales fuertes alineadas (momentum claro + pitcher dominante + sharp money + edge obvio)
+• SCORE 7-8: 3+ señales claras en la misma dirección sin señales en contra
+• SCORE 5-6: 2 señales positivas, pocas contradicciones, vale la pena análisis profundo
+• SCORE 3-4: Señales mixtas o débiles, no hay edge claro
+• SCORE 0-2: Sin señales, juego parejo, no apostar
+
+SEÑALES QUE SUBEN EL SCORE:
+✅ Un equipo es HOT (7+ wins L10) y el rival es COLD (≤3 wins L10)
+✅ Diferencia de WHIP contextual entre pitchers > 0.30
+✅ Sharp money detectado (Reverse Line Movement)
+✅ Movimiento de línea ML > 10 puntos en una dirección
+✅ Clima extremo con edge claro en TOTAL (viento out >15mph, temp extrema)
+✅ splitEdge > 1.0 para el pitcher jugando en su contexto favorable
+✅ Lineup confirmado con ventaja clara vs pitcher rival
+✅ H2H domina 4-1 o mejor en los últimos 5 juegos
+
+SEÑALES QUE BAJAN EL SCORE:
+❌ Ambos pitchers similares (WHIP contextual diferencia < 0.15)
+❌ Ambos equipos con momentum NEUTRAL
+❌ Sin movimiento de línea (mercado inactivo)
+❌ Lineups no confirmados
+❌ Juego indoor sin factores climáticos
+
+Devuelve SOLO JSON sin texto adicional:
+{
+  "stage1": [
+    {
+      "gameId": "string",
+      "score": 0-10,
+      "markets": ["ML", "TOTAL"],
+      "topSignal": "La señal más fuerte detectada en una frase",
+      "risk": "El mayor riesgo o señal en contra en una frase"
+    }
+  ]
+}`;
+
+/* ── ETAPA 2: Prompt de análisis profundo (gpt-4o) ────────── */
+const SYSTEM_PROMPT = `Eres el analista senior de apuestas MLB con el mejor historial del equipo. Los juegos que recibes ya fueron PRE-SELECCIONADOS por un scout como los de mayor potencial del día — son los MEJORES candidatos.
+
+Tu trabajo es encontrar picks de máxima calidad en estos juegos. Eres la segunda capa del proceso, el juicio final.
 
 ═══ TU HISTORIAL REAL (CRÍTICO - APRENDE DE ESTO) ═══
 • Win Rate Global: 43.0% ❌ (Objetivo: >52.4%)
@@ -957,7 +1156,7 @@ IMPORTANTE: Si recibes un bloque "APRENDIZAJE DE PICKS HISTÓRICOS", úsalo para
 4. EVITAR Under a menos que probabilidad >58%
 5. K e IP están DESHABILITADOS (win rate <35%)
 
-DATOS QUE RECIBES POR JUEGO:
+DATOS QUE RECIBES POR JUEGO (ya son los mejores candidatos del día):
 • H2H (head-to-head): Historial directo entre equipos (últimos 5 juegos), récord y runs promedio
 • Pitcher abridor (L10 starts): WHIP, K/BB, IP promedio, splits home/away, métricas contextuales
 • Ofensiva (L10 + temporada): R/G, K/G, H/G, hotRate, splits vs LHP/RHP
@@ -967,6 +1166,7 @@ DATOS QUE RECIBES POR JUEGO:
 • Lineup: confirmado o pendiente
 • Descanso del pitcher, umpire con factor K
 • Momentum del equipo (racha L10)
+• Score del scout (0-10) y señal principal detectada
 
 ═══ REGLAS DE ANÁLISIS MEJORADAS (FASE 2) ═══
 
@@ -993,18 +1193,16 @@ DATOS QUE RECIBES POR JUEGO:
 
 3. K (strikeouts) - DESHABILITADO:
    - Win rate histórico 30.3% = NO GENERAR PICKS DE K
-   - Mercado deshabilitado hasta mejorar el modelo
 
 4. IP (innings pitched) - DESHABILITADO:
    - Win rate histórico 28.6% = NO GENERAR PICKS DE IP
-   - Mercado deshabilitado hasta mejorar el modelo
 
 ═══ REGLAS DE CONFIANZA ESTRICTAS ═══
 • "strong": 5+ señales alineadas + edge >10% + momentum favorable + sharp money a favor + sin conflictos
 • "medium": 3-4 señales positivas + edge >8% + máximo 1 factor en contra
 • NO generes pick si:
-  - Edge calculado < 8% (era 5%)
-  - Probabilidad < 55% (era 52%)
+  - Edge calculado < 8%
+  - Probabilidad < 55%
   - Over con probabilidad <60%
   - Under con probabilidad <58%
   - TOTAL con edge <10%
@@ -1013,7 +1211,7 @@ DATOS QUE RECIBES POR JUEGO:
   - Equipo COLD sin ventajas compensatorias
   - Movimiento de línea >12 puntos en tu contra
 
-MÁXIMO 1 PICK POR JUEGO. Calidad absoluta > cantidad.
+MÁXIMO 1 PICK POR JUEGO. Si un juego no tiene edge claro, NO GENERES PICK — es mejor no apostar.
 
 PRIORIDAD: 90% ML, 10% TOTAL (solo con edge >10%).
 
@@ -1026,8 +1224,8 @@ Devuelve SOLO JSON:
         {
           "market": "ML"|"TOTAL",
           "sideTeam": "ABR del equipo (solo para ML)",
-          "side": "Over"|"Under" (para TOTAL)",
-          "line": number (para TOTAL)",
+          "side": "Over"|"Under",
+          "line": number,
           "confidence": "strong"|"medium",
           "reason": "Razón concreta con datos específicos: momentum, sharp money, clima, splits, H2H"
         }
@@ -1035,6 +1233,41 @@ Devuelve SOLO JSON:
     }
   ]
 }`;
+
+/* ── Stage 1: gpt-4o-mini scores all games (cheap + fast) ── */
+async function stage1ScoreGames(formattedGames, date) {
+  // Build a lightweight summary per game for stage 1
+  const summaries = formattedGames.map(({ gameId, text }) => `[${gameId}]\n${text}`).join('\n\n---\n\n');
+  const userMsg = `Fecha: ${date || 'hoy'}\nJuegos a evaluar: ${formattedGames.length}\n\n${summaries}`;
+
+  try {
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: STAGE1_SYSTEM_PROMPT },
+          { role: 'user', content: userMsg }
+        ],
+        temperature: 0.10,
+        response_format: { type: 'json_object' }
+      })
+    });
+
+    if (!r.ok) return [];
+    const data = await r.json();
+    const content = data?.choices?.[0]?.message?.content || '{"stage1":[]}';
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed?.stage1) ? parsed.stage1 : [];
+  } catch (err) {
+    console.error('Stage 1 scoring failed:', err.message);
+    return [];
+  }
+}
 
 /* ── Handler ─────────────────────────────────────────────── */
 export default async function handler(req) {
@@ -1060,7 +1293,7 @@ export default async function handler(req) {
     console.warn('No se pudo cargar contexto de aprendizaje:', error.message);
   }
 
-  // Enriquecer juegos con datos H2H
+  // ═══ Enriquecer juegos con datos H2H ═══
   const enrichedGames = await Promise.all(
     games.map(async (game) => {
       const h2h = await fetchH2HData(game.away?.id, game.home?.id);
@@ -1068,8 +1301,59 @@ export default async function handler(req) {
     })
   );
 
-  const gamesText = enrichedGames.map(formatGame).join('\n\n');
-  const userMsg = `Fecha: ${body?.date || 'hoy'}\nJuegos: ${enrichedGames.length}\n\n${learningContext}\n${gamesText}`;
+  // Pre-formatear todos los juegos (se usa en ambas etapas)
+  const formattedGames = enrichedGames.map(g => ({
+    gameId: g.gameId,
+    text: formatGame(g),
+    data: g
+  }));
+
+  // ═══ ETAPA 1: gpt-4o-mini puntúa TODOS los juegos ═══
+  console.log(`[Pipeline] Etapa 1: Evaluando ${formattedGames.length} juegos con gpt-4o-mini...`);
+  const stage1Results = await stage1ScoreGames(formattedGames, body?.date);
+
+  // Filtrar candidatos con score >= 5
+  const candidateScores = new Map(stage1Results.map(r => [r.gameId, r]));
+  const candidateGames = formattedGames.filter(g => {
+    const score = candidateScores.get(g.gameId);
+    return score && score.score >= 5;
+  });
+
+  console.log(`[Pipeline] Etapa 1 completada: ${candidateGames.length}/${formattedGames.length} candidatos (score ≥ 5)`);
+
+  // Sin candidatos: retornar vacío
+  if (candidateGames.length === 0) {
+    return new Response(JSON.stringify({
+      picks: [],
+      enhanced: true,
+      pipeline: '2-stage',
+      stage1: {
+        totalGames: formattedGames.length,
+        candidates: 0,
+        scores: stage1Results
+      },
+      metadata: { totalGenerated: 0, totalExcluded: 0, totalPassed: 0 }
+    }), { headers: { 'Content-Type': 'application/json' } });
+  }
+
+  // ═══ ETAPA 2: gpt-4o analiza SOLO los candidatos ═══
+  // Incluir el score y señal del scout en el texto del juego
+  const candidateTexts = candidateGames.map(g => {
+    const scout = candidateScores.get(g.gameId);
+    const scoutHeader = scout
+      ? `[SCOUT SCORE: ${scout.score}/10 | Señal: ${scout.topSignal} | Riesgo: ${scout.risk}]\n`
+      : '';
+    return scoutHeader + g.text;
+  }).join('\n\n');
+
+  const userMsg = `Fecha: ${body?.date || 'hoy'}
+Juegos candidatos: ${candidateGames.length} de ${formattedGames.length} totales
+(Solo los juegos con mayor potencial de value según el scout)
+
+${learningContext}
+${candidateTexts}`;
+
+  console.log(`[Pipeline] Etapa 2: Análisis profundo con gpt-4o en ${candidateGames.length} candidatos...`);
 
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -1078,32 +1362,44 @@ export default async function handler(req) {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o',          // ← Modelo premium solo en candidatos
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userMsg }
       ],
-      temperature: 0.12, // Más bajo para mayor consistencia
+      temperature: 0.10,        // Más bajo aún: gpt-4o no necesita temperatura alta
       response_format: { type: 'json_object' }
     })
   });
 
   if (!r.ok) {
-    return new Response(JSON.stringify({ picks: [], enhanced: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    const errText = await r.text().catch(() => '');
+    console.error('[Pipeline] Etapa 2 falló:', r.status, errText);
+    return new Response(JSON.stringify({
+      picks: [],
+      enhanced: true,
+      pipeline: '2-stage',
+      stage1: { totalGames: formattedGames.length, candidates: candidateGames.length, scores: stage1Results },
+      error: `Stage 2 HTTP ${r.status}`
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
   const data = await r.json();
   const content = data?.choices?.[0]?.message?.content || '{"picks":[]}';
   const aiPicks = JSON.parse(content);
 
-  // Aplicar filtros de exclusión y agregar analytics
+  // ═══ Aplicar filtros cuantitativos de exclusión ═══
   const filteredPicks = {
     picks: [],
     excluded: [],
     enhanced: true,
+    pipeline: '2-stage',
+    stage1: {
+      totalGames: formattedGames.length,
+      candidates: candidateGames.length,
+      threshold: 5,
+      scores: stage1Results
+    },
     metadata: {
       totalGenerated: 0,
       totalExcluded: 0,
@@ -1121,42 +1417,42 @@ export default async function handler(req) {
     for (const pick of (gamePick.topPicks || [])) {
       filteredPicks.metadata.totalGenerated++;
 
-      // Calcular analytics
+      // Calcular analytics cuantitativos
       const analytics = calculatePickProbability(pick, gameData);
-      
+
+      // Agregar score del scout al analytics
+      const scout = candidateScores.get(gamePick.gameId);
+      analytics.scoutScore = scout?.score ?? null;
+      analytics.scoutSignal = scout?.topSignal ?? null;
+
       // Aplicar filtros de exclusión
       const exclusion = shouldExcludePick(pick, gameData, analytics);
 
       if (exclusion.excluded) {
-        excludedPicks.push({
-          ...pick,
-          analytics,
-          exclusionReasons: exclusion.reasons
-        });
+        excludedPicks.push({ ...pick, analytics, exclusionReasons: exclusion.reasons });
         filteredPicks.metadata.totalExcluded++;
       } else {
-        passedPicks.push({
-          ...pick,
-          analytics
+        // Generar explicación detallada para picks strong
+        const detailedExplanation = generateDetailedExplanation(pick, gameData, analytics);
+        
+        passedPicks.push({ 
+          ...pick, 
+          reason: detailedExplanation, // Reemplazar con explicación detallada
+          analytics 
         });
         filteredPicks.metadata.totalPassed++;
       }
     }
 
     if (passedPicks.length > 0) {
-      filteredPicks.picks.push({
-        gameId: gamePick.gameId,
-        topPicks: passedPicks
-      });
+      filteredPicks.picks.push({ gameId: gamePick.gameId, topPicks: passedPicks });
     }
-
     if (excludedPicks.length > 0) {
-      filteredPicks.excluded.push({
-        gameId: gamePick.gameId,
-        excludedPicks
-      });
+      filteredPicks.excluded.push({ gameId: gamePick.gameId, excludedPicks });
     }
   }
+
+  console.log(`[Pipeline] Resultado final: ${filteredPicks.metadata.totalPassed} picks pasaron | ${filteredPicks.metadata.totalExcluded} excluidos`);
 
   return new Response(JSON.stringify(filteredPicks), {
     headers: { 'Content-Type': 'application/json' }

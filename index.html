@@ -493,6 +493,54 @@
       color: var(--muted);
       margin-left: 6px;
     }
+    .pick-reason-container {
+      margin-top: 0.5rem;
+      width: 100%;
+      display: block;
+    }
+    .pick-reason-short {
+      font-size: 0.75rem;
+      color: var(--muted);
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+    .pick-reason-full {
+      margin-top: 0.5rem;
+      padding: 1rem;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      line-height: 1.6;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+    .reason-content {
+      white-space: pre-wrap;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: var(--text);
+    }
+    .btn-expand-reason,
+    .btn-collapse-reason {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      margin-top: 0.25rem;
+      transition: background 0.2s;
+    }
+    .btn-expand-reason:hover,
+    .btn-collapse-reason:hover {
+      background: var(--primary-dark);
+      opacity: 0.9;
+    }
+    .btn-collapse-reason {
+      margin-top: 0.5rem;
+      background: var(--muted);
+    }
     .advice-ai {
       color: var(--muted);
       font-size: 0.78rem;
@@ -1139,6 +1187,14 @@
   function esc(s) {
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+  
+  // Toggle explicación detallada
+  function toggleReason(reasonId) {
+    const el = document.getElementById(reasonId);
+    if (el) {
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+  }
   function formatDateKey(dateKey) {
     const raw = String(dateKey || '').replace(/\D/g, '');
     if (raw.length !== 8) return String(dateKey || 'Sin fecha');
@@ -1461,7 +1517,26 @@
           ? (featuredStrong.has(`${cid}:::${p.text}`) ? '<span class="star-premium">✳</span>' : '<span class="star">⭐</span>')
           : '';
         const ai   = p.source === 'ai' ? '<span class="ai-badge">IA</span>' : '';
-        const r    = (p.source === 'ai' && p.badge === 'strong' && p.reason) ? `<span class="pick-reason">IA: ${esc(p.reason).slice(0,140)}</span>` : '';
+        
+        // Explicación detallada para picks strong
+        let r = '';
+        if (p.source === 'ai' && p.badge === 'strong' && p.reason) {
+          const reasonId = `reason-${cid}-${Math.random().toString(36).substr(2, 9)}`;
+          const shortReason = esc(p.reason).slice(0, 100);
+          const fullReason = esc(p.reason).replace(/\n/g, '<br>');
+          
+          r = `
+            <div class="pick-reason-container">
+              <span class="pick-reason-short">IA: ${shortReason}...</span>
+              <button class="btn-expand-reason" onclick="toggleReason('${reasonId}')">Ver análisis completo</button>
+              <div id="${reasonId}" class="pick-reason-full" style="display: none;">
+                <div class="reason-content">${fullReason}</div>
+                <button class="btn-collapse-reason" onclick="toggleReason('${reasonId}')">Ocultar</button>
+              </div>
+            </div>
+          `;
+        }
+        
         return `<span class="pick-tag">${p.text} <span class="badge ${p.badge}">${p.badge==='strong'?'Fuerte':'Medio'}</span> ${ai} ${star} ${r}</span>`;
       }).join(' ');
       const logos = `
@@ -1749,7 +1824,7 @@
         return;
       }
     } catch (_) {}
-    const payload = { date: dateKey, games };
+    const payload = { date: dateKey, games, enhanced: true }; // Activar sistema mejorado
     const data = await fetchAppJson('/api/ai-picks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
