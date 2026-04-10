@@ -1824,8 +1824,8 @@
         return;
       }
     } catch (_) {}
-    const payload = { date: dateKey, games, enhanced: true }; // Activar sistema mejorado
-    const data = await fetchAppJson('/api/ai-picks', {
+    const payload = { date: dateKey, games }; // Sistema mejorado con explicaciones detalladas
+    const data = await fetchAppJson('/api/ai-picks-enhanced', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
