@@ -30,17 +30,30 @@ function safeNum(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/* ── Fetch H2H data ──────────────────────────────────────── */
+/* ── Timeout wrapper utility ─────────────────────────────── */
+function withTimeout(promise, timeoutMs, fallback = null) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs))
+  ]);
+}
+
+/* ── Fetch H2H data with timeout ─────────────────────────── */
 async function fetchH2HData(awayTeamId, homeTeamId) {
   try {
     // ESPN no tiene endpoint directo de H2H, pero podemos simular con últimos juegos
     // En producción, esto vendría de tu base de datos histórica
-    const response = await fetch(
-      `https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/${awayTeamId}/schedule`
+    const response = await withTimeout(
+      fetch(`https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/teams/${awayTeamId}/schedule`),
+      2000, // 2 second timeout
+      null
     );
-    if (!response.ok) return null;
     
-    const data = await response.json();
+    if (!response || !response.ok) return null;
+    
+    const data = await withTimeout(response.json(), 1000, null);
+    if (!data) return null;
+    
     const events = data?.events || [];
     
     // Filtrar juegos contra el equipo rival
@@ -1241,25 +1254,31 @@ async function stage1ScoreGames(formattedGames, date) {
   const userMsg = `Fecha: ${date || 'hoy'}\nJuegos a evaluar: ${formattedGames.length}\n\n${summaries}`;
 
   try {
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: STAGE1_SYSTEM_PROMPT },
-          { role: 'user', content: userMsg }
-        ],
-        temperature: 0.10,
-        response_format: { type: 'json_object' }
-      })
-    });
+    const r = await withTimeout(
+      fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: STAGE1_SYSTEM_PROMPT },
+            { role: 'user', content: userMsg }
+          ],
+          temperature: 0.10,
+          response_format: { type: 'json_object' }
+        })
+      }),
+      4000, // 4 second timeout for stage 1
+      null
+    );
 
-    if (!r.ok) return [];
-    const data = await r.json();
+    if (!r || !r.ok) return [];
+    const data = await withTimeout(r.json(), 1000, null);
+    if (!data) return [];
+    
     const content = data?.choices?.[0]?.message?.content || '{"stage1":[]}';
     const parsed = JSON.parse(content);
     return Array.isArray(parsed?.stage1) ? parsed.stage1 : [];
@@ -1281,11 +1300,15 @@ export default async function handler(req) {
     return new Response(JSON.stringify({ picks: [] }), { headers: { 'Content-Type': 'application/json' } });
   }
 
-  // Obtener contexto de aprendizaje de picks históricos
+  // Obtener contexto de aprendizaje de picks históricos (con timeout)
   let learningContext = '';
   try {
     const { generateLearningContext } = await import('./ai-learning.js');
-    const learning = await generateLearningContext(30); // Últimos 30 días
+    const learning = await withTimeout(
+      generateLearningContext(30), // Últimos 30 días
+      3000, // 3 second timeout
+      { hasData: false, context: '' }
+    );
     if (learning.hasData) {
       learningContext = learning.context;
     }
@@ -1293,13 +1316,25 @@ export default async function handler(req) {
     console.warn('No se pudo cargar contexto de aprendizaje:', error.message);
   }
 
-  // ═══ Enriquecer juegos con datos H2H ═══
-  const enrichedGames = await Promise.all(
-    games.map(async (game) => {
-      const h2h = await fetchH2HData(game.away?.id, game.home?.id);
-      return { ...game, h2h };
-    })
-  );
+  // ═══ Enriquecer juegos con datos H2H (con timeout y límite de concurrencia) ═══
+  // Procesar en lotes de 3 para evitar sobrecarga
+  const enrichedGames = [];
+  const batchSize = 3;
+  
+  for (let i = 0; i < games.length; i += batchSize) {
+    const batch = games.slice(i, i + batchSize);
+    const batchResults = await Promise.all(
+      batch.map(async (game) => {
+        const h2h = await withTimeout(
+          fetchH2HData(game.away?.id, game.home?.id),
+          2500, // 2.5 second timeout per game
+          null
+        );
+        return { ...game, h2h };
+      })
+    );
+    enrichedGames.push(...batchResults);
+  }
 
   // Pre-formatear todos los juegos (se usa en ambas etapas)
   const formattedGames = enrichedGames.map(g => ({
