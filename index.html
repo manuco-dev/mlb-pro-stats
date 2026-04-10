@@ -1830,6 +1830,17 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
+    
+    // 🔍 DEBUG: Mostrar respuesta completa del API
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('📡 RESPUESTA DE /api/ai-picks-enhanced:');
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('Enhanced:', data?.enhanced);
+    console.log('Pipeline:', data?.pipeline);
+    console.log('Total picks:', data?.picks?.length || 0);
+    console.log('Metadata:', data?.metadata);
+    console.log('');
+    
     try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch(_) {}
     const arr = data?.picks || [];
     for (const g of arr) {
@@ -1840,9 +1851,38 @@
       const lastAway = meta?.away?.pitcherLast || '';
       const lastHome = meta?.home?.pitcherLast || '';
       const pills = [];
+      
+      // 🔍 DEBUG: Mostrar picks de este juego
+      console.log(`🎯 JUEGO: ${base.awayAbr} @ ${base.homeAbr} (${g.gameId})`);
+      console.log(`   Picks generados: ${g.topPicks?.length || 0}`);
+      
       for (const p of (g.topPicks || [])) {
         const conf = (p.confidence || '').toLowerCase();
         const badge = conf === 'strong' ? 'strong' : 'lean';
+        
+        // 🔍 DEBUG: Mostrar cada pick con su razón
+        console.log('');
+        console.log(`   ┌─ PICK ${badge.toUpperCase()}`);
+        console.log(`   │ Market: ${p.market}`);
+        console.log(`   │ Side: ${p.side || p.sideTeam || '?'}`);
+        console.log(`   │ Line: ${p.line || 'N/A'}`);
+        console.log(`   │ Confidence: ${p.confidence}`);
+        console.log(`   │ Source: ai`);
+        console.log(`   │`);
+        console.log(`   │ 📝 RAZÓN (${p.reason?.length || 0} caracteres):`);
+        console.log(`   │ ${'-'.repeat(60)}`);
+        if (p.reason) {
+          // Mostrar razón completa con formato
+          const reasonLines = p.reason.split('\n');
+          reasonLines.forEach(line => {
+            console.log(`   │ ${line}`);
+          });
+        } else {
+          console.log(`   │ ⚠️ SIN RAZÓN - Esto es un problema!`);
+        }
+        console.log(`   └${'─'.repeat(60)}`);
+        console.log('');
+        
         if (p.market === 'ML') {
           const abr = p.sideTeam || p.sideAbr || (p.side === 'away' ? base.awayAbr : p.side === 'home' ? base.homeAbr : '');
           if (abr) pills.push(createPickEntry({ market: 'ML', subject: abr, badge, source: 'ai', reason: p.reason || '' }));
@@ -1856,11 +1896,21 @@
            if (who && p.side) pills.push(createPickEntry({ market: 'IP', subject: who, side: p.side, line: p.line, badge, source: 'ai', reason: p.reason || '' }));
         }
       }
+      
+      console.log(`   ✅ Pills creados para este juego: ${pills.length}`);
+      console.log('');
+      
       const existing = new Set(base.picks.map(x=>x.text));
       const merged = base.picks.concat(pills.filter(x=>!existing.has(x.text)));
       base.picks = merged;
       picksMap[cardId] = base;
     }
+    
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('✅ PROCESAMIENTO COMPLETADO');
+    console.log('═══════════════════════════════════════════════════════');
+    console.log('');
+    
     renderSummary();
     schedulePicksSync(500);
   }
